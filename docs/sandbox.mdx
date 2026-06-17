@@ -278,7 +278,7 @@ When an interactive `getToken` reports that authorization is required, eve keeps
 
 Eve resolves credentials when authored code first accesses the sandbox during a step, applies the resulting policy, and replaces every brokered token with an empty value when the step ends or fails. If a non-interactive credential fails to resolve, that credential is represented by an empty token while the authored egress restrictions remain active. A failed cleanup fails the step rather than being ignored. Brokered credentials are unavailable during template bootstrap.
 
-This managed form belongs specifically to `vercel()`; a generic sandbox backend is not required to implement it. Avoid also setting network policy through `onSession` or `setNetworkPolicy` when using managed brokering, since a second writer can replace the brokered policy.
+This managed form belongs specifically to `vercel()`; a generic sandbox backend is not required to implement it. Do not also set `networkPolicy` through `onSession` or `setNetworkPolicy` when using managed brokering. Vercel network policy updates replace the entire policy, so doing this removes the brokered transforms and disables Vercel Connect credential injection for sandbox egress.
 
 You can also construct transforms directly on Vercel Sandbox or microsandbox:
 
