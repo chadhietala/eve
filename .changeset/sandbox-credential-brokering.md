@@ -2,4 +2,4 @@
 "eve": patch
 ---
 
-Add step-scoped non-interactive credential brokering to the Vercel Sandbox backend. Credentials are injected through the network policy for authored execution and cleared when the step finishes.
+Add step-scoped credential brokering to the Vercel Sandbox backend, including interactive per-user authorization. Sandboxes remain on an empty-token policy while authorization is pending, then receive the credentialed policy on the resumed step.

@@ -60,17 +60,19 @@ export type VercelSandboxNetworkPolicy<C extends SandboxCredentialMap> =
 export type VercelSandboxCreateOptions<C extends SandboxCredentialMap = Record<string, never>> =
   Omit<VercelSdkSandboxCreateOptions, "networkPolicy"> & {
     /**
-     * Non-interactive credentials resolved for the active principal on every
-     * step. Tokens are injected by the Vercel Sandbox firewall and never enter
-     * the sandbox filesystem or environment.
+     * Credentials resolved for the active principal on every step. Interactive
+     * strategies use eve's normal authorization pause/resume flow before the
+     * credentialed policy is applied. Tokens are injected by the Vercel Sandbox
+     * firewall and never enter the sandbox filesystem or environment.
      */
     readonly credentials?: C;
     /**
      * Static policy, or a builder called with the resolved credentials.
      *
      * A function-form policy requires at least one credential. Unavailable
-     * credentials are represented by an empty token so stale credentials are
-     * replaced while the authored egress restrictions remain in force.
+     * non-interactive credentials are represented by an empty token. An
+     * interactive credential that requires consent parks the calling tool while
+     * the sandbox remains on the empty-token policy.
      */
     readonly networkPolicy?: VercelSandboxNetworkPolicy<NoInfer<C>>;
   };

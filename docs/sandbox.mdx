@@ -209,7 +209,7 @@ Domain-level allow-lists and credential brokering are supported by `vercel()` an
 
 Secrets never enter the sandbox. Instead, the network policy's per-domain `transform` injects credentials at the firewall, so a header can authenticate egress to a host while the secret stays out of the sandbox process entirely.
 
-With the Vercel backend, `vercel()` can resolve non-interactive authorization strategies for every runtime step and pass the results to a function-form policy:
+With the Vercel backend, `vercel()` resolves authorization strategies for every runtime step and passes the results to a function-form policy:
 
 ```ts title="agent/sandbox.ts"
 import { defineSandbox } from "eve/sandbox";
@@ -243,9 +243,40 @@ export default defineSandbox({
 });
 ```
 
-The strategy uses the same `getToken` contract as connection authorization and may set `principalType: "user"` for per-user credentials. Interactive authorization is not supported here because sandbox attachment cannot pause for consent.
+The strategy uses the same authorization contract as connections and authored tools. It may be a static `getToken` strategy, a per-user strategy with `principalType: "user"`, or a full interactive strategy such as Vercel Connect:
 
-Eve resolves the credentials before authored step code runs, applies the resulting policy, and replaces every brokered token with an empty value when the step ends or fails. If resolution fails, that credential is also represented by an empty token while the authored egress restrictions remain active. A failed cleanup fails the step rather than being ignored. Brokered credentials are unavailable during template bootstrap.
+```ts title="agent/sandbox.ts"
+import { connect } from "@vercel/connect/eve";
+import { defineSandbox } from "eve/sandbox";
+import { vercel } from "eve/sandbox/vercel";
+
+export default defineSandbox({
+  backend: vercel({
+    credentials: {
+      service: { ...connect("example-service"), displayName: "Example Service" },
+    },
+    networkPolicy: ({ service }) => ({
+      allow: {
+        "api.example.com": [
+          {
+            transform: [
+              {
+                headers: {
+                  authorization: `Bearer ${service.token}`,
+                },
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  }),
+});
+```
+
+When an interactive `getToken` reports that authorization is required, eve keeps the already-created sandbox on the empty-token policy, emits the normal `authorization.required` challenge, and durably parks the calling tool. After the callback completes, the tool is replayed, eve reattaches to the same sandbox, resolves the credential, and replaces the policy on the live sandbox before returning it to authored code.
+
+Eve resolves credentials when authored code first accesses the sandbox during a step, applies the resulting policy, and replaces every brokered token with an empty value when the step ends or fails. If a non-interactive credential fails to resolve, that credential is represented by an empty token while the authored egress restrictions remain active. A failed cleanup fails the step rather than being ignored. Brokered credentials are unavailable during template bootstrap.
 
 This managed form belongs specifically to `vercel()`; a generic sandbox backend is not required to implement it. Avoid also setting network policy through `onSession` or `setNetworkPolicy` when using managed brokering, since a second writer can replace the brokered policy.
 

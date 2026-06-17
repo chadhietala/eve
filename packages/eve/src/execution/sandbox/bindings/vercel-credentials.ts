@@ -1,21 +1,42 @@
 import type { SandboxCreateOptions } from "#compiled/@vercel/sandbox/index.js";
 import { getVercelOidcToken } from "#compiled/@vercel/oidc/index.js";
+import { SandboxAuthorizationInterrupt } from "#execution/sandbox/authorization-interrupt.js";
+import { type AuthorizationSignal, requestAuthorization } from "#harness/authorization.js";
 import { createLogger } from "#internal/logging.js";
+import {
+  ConnectionAuthorizationFailedError,
+  isConnectionAuthorizationRequiredError,
+} from "#public/connections/errors.js";
 import type { SandboxCredentialMap } from "#public/sandbox/credentials.js";
 import type { VercelSandboxCreateOptions } from "#public/sandbox/vercel-sandbox.js";
 import {
+  completeScopedAuthorization,
+  evictScopedToken,
   resolveScopedToken,
+  startScopedAuthorization,
   type ScopedAuthorization,
 } from "#runtime/connections/scoped-authorization.js";
 import {
-  supportsInteractiveAuthorization,
   type AuthorizationDefinition,
+  supportsInteractiveAuthorization,
   type TokenResult,
 } from "#runtime/connections/types.js";
 import { normalizeAuthorizationSpec } from "#runtime/connections/validate-authorization.js";
 import type { SandboxNetworkPolicy } from "#shared/sandbox-network-policy.js";
 
 const logger = createLogger("sandbox.vercel-credentials");
+
+type ResolvedCredentialEntry =
+  | {
+      readonly kind: "authorization";
+      readonly label: string;
+      readonly signal: AuthorizationSignal;
+    }
+  | {
+      readonly kind: "token";
+      readonly label: string;
+      readonly token: TokenResult;
+    };
 
 export function getVercelSandboxFetch(
   createOptions: SandboxCreateOptions,
@@ -87,12 +108,6 @@ export function extractVercelCredentialBrokering<C extends SandboxCredentialMap>
   const normalized: Record<string, AuthorizationDefinition> = {};
   for (const [label, auth] of Object.entries(credentials ?? {})) {
     const authorization = normalizeAuthorizationSpec(auth, `vercel() credential "${label}":`);
-    if (supportsInteractiveAuthorization(authorization)) {
-      throw new Error(
-        `vercel() credential "${label}": interactive authorization is not supported. ` +
-          "Use a non-interactive getToken strategy.",
-      );
-    }
     normalized[label] = authorization;
   }
 
@@ -111,24 +126,71 @@ export async function resolveVercelCredentialPolicy(
   brokering: VercelCredentialBrokering,
   sandboxScope: string,
 ): Promise<SandboxNetworkPolicy> {
-  const entries = await Promise.all(
+  const entries: ResolvedCredentialEntry[] = await Promise.all(
     Object.entries(brokering.credentials).map(async ([label, authorization]) => {
+      const scoped = createScopedCredential(sandboxScope, label, authorization);
+      const justAuthorized = await completeScopedAuthorization(scoped);
+
       try {
-        const token = await resolveScopedToken(
-          createScopedCredential(sandboxScope, label, authorization),
-        );
-        return [label, token] as const;
+        return {
+          kind: "token",
+          label,
+          token: await resolveScopedToken(scoped),
+        } as const;
       } catch (error) {
+        if (isConnectionAuthorizationRequiredError(error)) {
+          if (justAuthorized) {
+            throw new ConnectionAuthorizationFailedError(scoped.scope, {
+              message:
+                `Sandbox credential "${label}" rejected the token immediately after ` +
+                "authorization.",
+              reason: "token_rejected_after_authorization",
+              retryable: false,
+            });
+          }
+
+          await evictScopedToken(scoped);
+          const signal = await startScopedAuthorization(scoped);
+          if (signal !== undefined) {
+            return { kind: "authorization", label, signal } as const;
+          }
+          if (supportsInteractiveAuthorization(authorization)) {
+            throw new ConnectionAuthorizationFailedError(scoped.scope, {
+              message:
+                `Sandbox credential "${label}" requires sign-in, but no authorization ` +
+                "callback URL could be minted for this run (missing session context).",
+              reason: "authorization_callback_unavailable",
+              retryable: false,
+            });
+          }
+        }
+
         logger.warn("sandbox credential unavailable; applying empty token", {
           credential: label,
           error,
         });
-        return [label, { token: "" }] as const;
+        return { kind: "token", label, token: { token: "" } } as const;
       }
     }),
   );
 
-  return brokering.buildPolicy(Object.fromEntries(entries));
+  const challenges = entries.flatMap((entry) =>
+    entry.kind === "authorization" ? entry.signal.challenges : [],
+  );
+  if (challenges.length > 0) {
+    throw new SandboxAuthorizationInterrupt(requestAuthorization(challenges));
+  }
+
+  return brokering.buildPolicy(
+    Object.fromEntries(
+      entries
+        .filter(
+          (entry): entry is Extract<ResolvedCredentialEntry, { readonly kind: "token" }> =>
+            entry.kind === "token",
+        )
+        .map((entry) => [entry.label, entry.token]),
+    ),
+  );
 }
 
 function createScopedCredential(

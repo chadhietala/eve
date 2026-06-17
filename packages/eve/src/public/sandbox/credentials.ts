@@ -1,16 +1,14 @@
-import type {
-  NonInteractiveAuthorizationDefinition,
-  TokenResult,
-} from "#runtime/connections/types.js";
+import type { ConnectionAuthDefinition, TokenResult } from "#runtime/connections/types.js";
 
 /**
- * Non-interactive authorization strategy for one brokered sandbox
- * credential. Interactive authorization is rejected because sandbox
- * attachment cannot pause a step for consent.
+ * Authorization strategy for one brokered sandbox credential.
+ *
+ * Uses the same non-interactive or interactive shapes as connection
+ * authorization. When an interactive strategy requires consent, eve keeps
+ * the live sandbox on the credential-free policy, parks the calling tool, and
+ * applies the resolved policy after authorization resumes.
  */
-export type SandboxCredentialAuth = Omit<NonInteractiveAuthorizationDefinition, "principalType"> & {
-  readonly principalType?: NonInteractiveAuthorizationDefinition["principalType"];
-};
+export type SandboxCredentialAuth = ConnectionAuthDefinition;
 
 /**
  * Author-chosen credential labels mapped to authorization strategies.

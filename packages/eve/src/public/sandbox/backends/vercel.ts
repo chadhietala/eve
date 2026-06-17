@@ -35,9 +35,10 @@ import type {
  * `onSession({ use })`.
  *
  * A `credentials` map paired with a function-form `networkPolicy` resolves
- * non-interactive credentials for the active principal on every step and
- * injects them through the Vercel Sandbox firewall. Brokered credentials are
- * replaced with empty values after the step completes.
+ * credentials for the active principal on every step and injects them through
+ * the Vercel Sandbox firewall. Interactive strategies use eve's authorization
+ * pause/resume flow while the live sandbox remains on an empty-token policy.
+ * Brokered credentials are replaced with empty values after the step completes.
  */
 export function vercel<C extends SandboxCredentialMap = Record<string, never>>(
   opts?: VercelSandboxCreateOptions<C>,

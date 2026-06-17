@@ -16,6 +16,7 @@ import { createRuntimeToolResultFromValue } from "#harness/action-result-helpers
 import { readToolInterrupt, stashToolInterrupt } from "#harness/tool-interrupts.js";
 import { wrapToolExecute } from "#harness/tools.js";
 import { markCodeModeToolExecutionOptions } from "#runtime/framework-tools/code-mode-connection-auth.js";
+import { SandboxAuthorizationInterrupt } from "#execution/sandbox/authorization-interrupt.js";
 
 function signalWithVerifier(): AuthorizationSignal {
   return requestAuthorization([
@@ -114,6 +115,21 @@ describe("wrapToolExecute", () => {
 
     expect(output).toBe(signal); // not redacted — code-mode reads the raw signal
     expect(readToolInterrupt(ctx, "call_2")).toBeUndefined(); // not stashed
+  });
+
+  it("converts a sandbox authorization interrupt into the normal tool authorization flow", async () => {
+    const signal = signalWithVerifier();
+    const wrapped = wrapToolExecute({
+      ...baseDef,
+      execute: async () => {
+        throw new SandboxAuthorizationInterrupt(signal);
+      },
+    })!;
+    const ctx = new ContextContainer();
+    const output = await contextStorage.run(ctx, () => wrapped({}, { toolCallId: "call_sandbox" }));
+
+    expect(output).toEqual(modelFacingAuthorizationOutput(signal));
+    expect(readToolInterrupt(ctx, "call_sandbox")).toBe(signal);
   });
 
   it("passes non-interrupt outputs through unchanged", async () => {

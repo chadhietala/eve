@@ -83,10 +83,6 @@ export function createVercelSandbox<C extends SandboxCredentialMap = Record<stri
     async create(
       createInput: SandboxBackendCreateInput,
     ): Promise<SandboxBackendHandle<VercelSandboxSessionUseOptions>> {
-      const brokeredPolicy =
-        extracted.brokering === undefined
-          ? undefined
-          : await resolveVercelCredentialPolicy(extracted.brokering, createInput.sessionKey);
       // Resolve tags up-front so tag-count validation fails fast before
       // we go to the network for the template snapshot.
       const tags = resolveVercelSandboxTags(createOptions.tags, createInput.tags);
@@ -137,13 +133,25 @@ export function createVercelSandbox<C extends SandboxCredentialMap = Record<stri
         );
       }
 
-      await activateVercelSandboxPolicy({
-        brokeredPolicy,
-        brokeringEmptyPolicy: extracted.brokering?.emptyPolicy,
-        createOptions,
-        session,
-        template,
-      });
+      let brokeredPolicy: SandboxNetworkPolicy | undefined;
+      if (extracted.brokering === undefined) {
+        await activateStaticVercelSandboxPolicy({ createOptions, session, template });
+      } else {
+        await prepareVercelSandboxForCredentialResolution({
+          emptyPolicy: extracted.brokering.emptyPolicy,
+          session,
+          template,
+        });
+        brokeredPolicy = await resolveVercelCredentialPolicy(
+          extracted.brokering,
+          createInput.sessionKey,
+        );
+        await activateBrokeredVercelSandboxPolicy({
+          brokeredPolicy,
+          emptyPolicy: extracted.brokering.emptyPolicy,
+          sandbox: session.sandbox,
+        });
+      }
 
       return createVercelSandboxHandle(
         session.sandbox,
@@ -178,37 +186,71 @@ export function createVercelSandbox<C extends SandboxCredentialMap = Record<stri
   };
 }
 
-async function activateVercelSandboxPolicy(input: {
-  readonly brokeredPolicy: SandboxNetworkPolicy | undefined;
-  readonly brokeringEmptyPolicy: SandboxNetworkPolicy | undefined;
+async function activateStaticVercelSandboxPolicy(input: {
   readonly createOptions: SandboxCreateOptions;
+  readonly session: VercelSandboxSessionCreateResult;
+  readonly template: VercelSandboxTemplateRecord | null;
+}): Promise<void> {
+  if (input.template !== null || !input.session.created) {
+    return;
+  }
+
+  await ensureVercelSandboxBaseRuntime(input.session.sandbox);
+  await applyInitialVercelNetworkPolicy(input.session.sandbox, input.createOptions.networkPolicy);
+}
+
+async function prepareVercelSandboxForCredentialResolution(input: {
+  readonly emptyPolicy: SandboxNetworkPolicy;
   readonly session: VercelSandboxSessionCreateResult;
   readonly template: VercelSandboxTemplateRecord | null;
 }): Promise<void> {
   try {
     if (input.template === null && input.session.created) {
       await ensureVercelSandboxBaseRuntime(input.session.sandbox);
-      await applyInitialVercelNetworkPolicy(
-        input.session.sandbox,
-        input.brokeredPolicy ?? input.createOptions.networkPolicy,
-      );
-    } else if (input.brokeredPolicy !== undefined) {
-      await input.session.sandbox.update({ networkPolicy: input.brokeredPolicy });
+      await applyInitialVercelNetworkPolicy(input.session.sandbox, input.emptyPolicy);
+      return;
     }
+
+    await input.session.sandbox.update({ networkPolicy: input.emptyPolicy });
   } catch (error) {
-    if (input.brokeringEmptyPolicy === undefined) {
-      throw error;
-    }
-    try {
-      await input.session.sandbox.update({ networkPolicy: input.brokeringEmptyPolicy });
-    } catch (cleanupError) {
-      throw new AggregateError(
-        [error, cleanupError],
-        "Failed to activate brokered sandbox credentials and clear the network policy.",
-      );
-    }
-    throw error;
+    await clearVercelSandboxPolicyAfterFailure({
+      error,
+      emptyPolicy: input.emptyPolicy,
+      message: "Failed to prepare brokered sandbox credentials and clear the network policy.",
+      sandbox: input.session.sandbox,
+    });
   }
+}
+
+async function activateBrokeredVercelSandboxPolicy(input: {
+  readonly brokeredPolicy: SandboxNetworkPolicy;
+  readonly emptyPolicy: SandboxNetworkPolicy;
+  readonly sandbox: SdkSandbox;
+}): Promise<void> {
+  try {
+    await input.sandbox.update({ networkPolicy: input.brokeredPolicy });
+  } catch (error) {
+    await clearVercelSandboxPolicyAfterFailure({
+      error,
+      emptyPolicy: input.emptyPolicy,
+      message: "Failed to activate brokered sandbox credentials and clear the network policy.",
+      sandbox: input.sandbox,
+    });
+  }
+}
+
+async function clearVercelSandboxPolicyAfterFailure(input: {
+  readonly emptyPolicy: SandboxNetworkPolicy;
+  readonly error: unknown;
+  readonly message: string;
+  readonly sandbox: SdkSandbox;
+}): Promise<never> {
+  try {
+    await input.sandbox.update({ networkPolicy: input.emptyPolicy });
+  } catch (cleanupError) {
+    throw new AggregateError([input.error, cleanupError], input.message);
+  }
+  throw input.error;
 }
 
 interface VercelSandboxTemplateRecord {
