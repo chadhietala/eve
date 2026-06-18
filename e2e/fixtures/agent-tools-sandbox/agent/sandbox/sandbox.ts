@@ -1,5 +1,14 @@
-import { defaultBackend, defineSandbox } from "eve/sandbox";
+import { defineSandbox, type SandboxDefinition } from "eve/sandbox";
 import { vercel } from "eve/sandbox/vercel";
+import {
+  ConnectionAuthorizationFailedError,
+  ConnectionAuthorizationRequiredError,
+  defineInteractiveAuthorization,
+} from "eve/connections";
+import type {
+  VercelSandboxBootstrapUseOptions,
+  VercelSandboxSessionUseOptions,
+} from "eve/sandbox/vercel";
 
 /**
  * Sandbox lifecycle fixture exercising the surfaces an agent author relies
@@ -15,18 +24,10 @@ import { vercel } from "eve/sandbox/vercel";
  *   so an eval can prove session-scoped setup ran on top of the shared
  *   template.
  *
- * Backend is left as the framework default so this fixture works both
- * locally (where `defaultBackend()` resolves to `docker()`) and on Vercel
- * deployments (where it resolves to `vercel()`). Both run the published
- * `ghcr.io/vercel/eve:latest` base image, which ships Python, Node, and git;
- * the bootstrap below assumes that real-binary environment and is not meant
- * to run against the dependency-free `just-bash` fallback.
- *
- * `EVE_TEST_AUTHOR_SNAPSHOT_ID`, when set, overrides the backend with
- * `vercel({ source: { type: "snapshot", snapshotId } })` so the
- * sandbox-author-snapshot smoke test can verify that an author-supplied
- * snapshot is honored as the template base layer while bootstrap still
- * runs on top.
+ * This manual smoke configuration pins the Vercel backend and injects a
+ * harmless fake token into requests to Postman Echo. The echoed response
+ * proves that on-request credential resolution installed the firewall
+ * transform only after the awaited request demanded it.
  */
 export const SANDBOX_MARKER_PATH = "/workspace/smoke-marker.txt";
 export const SANDBOX_MARKER_TOKEN = "sandbox-bootstrap-ok-J3Q";
@@ -52,13 +53,59 @@ const CLI_SCRIPT = [
   "",
 ].join("\n");
 
-const authorSnapshotId = process.env.EVE_TEST_AUTHOR_SNAPSHOT_ID;
-const backend =
-  authorSnapshotId !== undefined
-    ? vercel({ source: { snapshotId: authorSnapshotId, type: "snapshot" } })
-    : defaultBackend();
+const backend = vercel({
+  authProxyBaseUrl: "https://temp-test-eager-eve.vercel.app",
+  credentialResolution: "on-request",
+  networkPolicy: {
+    allow: {
+      "postman-echo.com": [
+        {
+          auth: defineInteractiveAuthorization({
+            async getToken() {
+              throw new ConnectionAuthorizationRequiredError("postman-echo");
+            },
+            async startAuthorization({ callbackUrl }) {
+              const callback = new URL(callbackUrl);
+              callback.searchParams.set("code", "eve-fake-code");
+              return {
+                challenge: {
+                  displayName: "Postman Echo smoke test",
+                  instructions: "Open the link to grant the sandbox its fake test token.",
+                  url: callback.toString(),
+                },
+              };
+            },
+            async completeAuthorization({ callback }) {
+              if (callback.params.code !== "eve-fake-code") {
+                throw new ConnectionAuthorizationFailedError("postman-echo", {
+                  reason: "invalid_fake_code",
+                  retryable: false,
+                });
+              }
+              return { token: "eve-fake-token" };
+            },
+          }),
+          match: {
+            method: ["GET"],
+            path: { exact: "/get" },
+          },
+          transform: ({ token }) => [
+            {
+              headers: {
+                "x-eve-test-token": token,
+              },
+            },
+          ],
+        },
+      ],
+    },
+  },
+});
 
-export default defineSandbox({
+const definition: SandboxDefinition<
+  VercelSandboxBootstrapUseOptions,
+  VercelSandboxSessionUseOptions
+> = defineSandbox({
   backend,
   // Bump when the bootstrap output changes so the reusable template snapshot
   // is rebuilt rather than served stale.
@@ -85,3 +132,5 @@ export default defineSandbox({
     });
   },
 });
+
+export default definition;
