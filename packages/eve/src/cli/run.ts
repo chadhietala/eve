@@ -72,6 +72,7 @@ interface CliRuntimeDependencies {
     options?: {
       host?: string;
       port?: number;
+      reuseExisting?: boolean;
     },
   ): Promise<DevelopmentServerHandle>;
   startProductionHost(
@@ -513,19 +514,41 @@ function createCliProgram(logger: CliLogger, runtime: CliRuntimeOverrides): Comm
 
       loadDevelopmentEnvironmentFiles(appRoot);
 
+      // Resolve early so the TUI title uses the same app root the host will own.
+      let localAppRoot: string | undefined;
+      if (remoteServerUrl === undefined) {
+        const { resolveDiscoveryProject } = await import("#discover/project.js");
+        try {
+          localAppRoot = (await resolveDiscoveryProject(appRoot)).appRoot;
+        } catch {
+          localAppRoot = appRoot;
+        }
+      }
+
+      // An explicit endpoint means the user asked for a specific server, so a
+      // TUI session must not silently attach to a different recorded one.
+      const hasExplicitEndpoint =
+        options.host !== undefined ||
+        options.port !== undefined ||
+        (process.env.PORT?.trim() ?? "") !== "";
+
       const runInteractiveUi = async (serverUrl: string): Promise<void> => {
         logger.log("");
 
         const runDevelopmentTui = runtime.runDevelopmentTui ?? (await loadRunDevelopmentTui());
         const display = resolveTuiDisplayOptions(options);
-        const title = resolveTuiTitle({ name: options.name, remoteServerUrl, appRoot });
+        const title = resolveTuiTitle({
+          name: options.name,
+          remoteServerUrl,
+          appRoot: localAppRoot ?? appRoot,
+        });
         if (title !== undefined) display.name = title;
         const tuiInput: Parameters<CliRuntimeDependencies["runDevelopmentTui"]>[0] = {
           serverUrl,
           ...display,
         };
         if (remoteServerUrl === undefined) {
-          tuiInput.appRoot = appRoot;
+          tuiInput.appRoot = localAppRoot ?? appRoot;
         }
         if (options.input !== undefined) {
           tuiInput.initialInput = options.input;
@@ -558,9 +581,10 @@ function createCliProgram(logger: CliLogger, runtime: CliRuntimeOverrides): Comm
       }
 
       const startHost = runtime.startHost ?? (await loadStartHost());
-      const server = await startHost(appRoot, {
+      const server = await startHost(localAppRoot ?? appRoot, {
         host: options.host,
         port: options.port,
+        reuseExisting: mode === "tui" && !hasExplicitEndpoint,
       });
       let closed = false;
 
