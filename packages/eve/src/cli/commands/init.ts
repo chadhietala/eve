@@ -27,7 +27,7 @@ import {
   type EvePackageContract,
 } from "#setup/scaffold/create/project.js";
 
-import { initAgentDevHandoff } from "./agent-instructions.js";
+import { initAgentDevHandoff, initAgentInstructions } from "./agent-instructions.js";
 import { tryInitializeGit } from "./init-git.js";
 
 export interface InitCliLogger {
@@ -234,6 +234,9 @@ function startSpinner(logger: InitCliLogger, message: string): { stop(): void } 
  *
  * Runs launched by a coding agent get the dev command printed instead of
  * spawned after scaffolding, since the dev TUI would wedge the launching agent.
+ * A coding agent that omits the target entirely gets the setup guide printed and
+ * nothing scaffolded, since a bare `eve init` means it has not yet chosen what to
+ * build.
  */
 export async function runInitCommand(
   logger: InitCliLogger,
@@ -243,6 +246,14 @@ export async function runInitCommand(
   dependencies: InitCommandDependencies = defaultDependencies,
 ): Promise<void> {
   const agentLaunched = await dependencies.isCodingAgentLaunch();
+  // A coding agent that runs `eve init` with no target has not decided what to
+  // build yet. Hand it the setup guide (collect intent, then re-run with an
+  // explicit target) rather than silently scaffolding the current directory. A
+  // human, or an explicit `.`/`<name>`, still scaffolds.
+  if (target === undefined && agentLaunched) {
+    logger.log(initAgentInstructions());
+    return;
+  }
   const rawTarget = target ?? CURRENT_DIRECTORY_PROJECT_NAME;
   const evePackage = resolveInitEvePackageOverride();
   const currentDirectoryTarget = isCurrentDirectoryTarget(rawTarget);

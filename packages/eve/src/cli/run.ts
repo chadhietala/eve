@@ -3,6 +3,7 @@ import { basename } from "node:path";
 import { Command, CommanderError, InvalidArgumentError } from "#compiled/commander/index.js";
 import { resolveApplicationRoot } from "#internal/application/paths.js";
 import { resolveInstalledPackageInfo } from "#internal/application/package.js";
+import { isCodingAgentLaunch } from "#cli/agent-detection.js";
 import { eveCliBanner } from "#cli/banner.js";
 import { registerProjectCommands } from "#cli/commands/register-project-commands.js";
 import { LOG_DISPLAY_MODES, parseLogDisplayMode } from "#cli/dev/tui/log-display-mode.js";
@@ -53,6 +54,7 @@ interface ProductionServerHandle {
 }
 
 interface CliRuntimeDependencies {
+  isCodingAgentLaunch(): Promise<boolean>;
   buildHost(appRoot: string): Promise<string>;
   printApplicationInfo(
     logger: CliLogger,
@@ -666,6 +668,19 @@ export async function runCli(
     if (error instanceof CommanderError) {
       if (error.exitCode === 0) {
         return;
+      }
+
+      // A coding agent that fumbles `eve init` (e.g. an unknown flag) trips
+      // commander before the init action runs, so the action's own agent
+      // detection never fires. Commander has already written its usage error to
+      // stderr; add the setup guide on stdout so the agent gets actionable next
+      // steps — but still fall through to throw, so the malformed invocation
+      // keeps its nonzero exit instead of silently succeeding.
+      const detectCodingAgentLaunch = runtime.isCodingAgentLaunch ?? isCodingAgentLaunch;
+      const agentLaunched = await detectCodingAgentLaunch();
+      if (input[0] === "init" && agentLaunched) {
+        const { initAgentInstructions } = await import("#cli/commands/agent-instructions.js");
+        logger.log(initAgentInstructions());
       }
 
       throw new Error(error.message);
