@@ -18,12 +18,20 @@ import {
  * imports), so no rewrite rules are needed — and a future version that
  * adds an import hard-fails the copier instead of silently drifting.
  */
+const declaration = await loadDeclaration("@vercel/sandbox.d.ts");
+
 export default {
   packageName: "@vercel/sandbox",
   compiledPath: "@vercel/sandbox",
+  entries: [
+    { declaration, outputPath: "index" },
+    { input: "@vercel/sandbox/proxy", outputPath: "proxy" },
+  ],
   plugins: [createOptionalNativeStubPlugin(["fsevents"])],
-  declaration: await loadDeclaration("@vercel/sandbox.d.ts"),
   copyDeclarations: createDeclarationCopier({
-    files: [{ source: "network-policy.d.ts", output: "network-policy.d.ts" }],
+    files: [
+      { source: "network-policy.d.ts", output: "network-policy.d.ts" },
+      { source: "proxy.d.ts", output: "proxy.d.ts" },
+    ],
   }),
 };

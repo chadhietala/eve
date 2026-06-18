@@ -52,6 +52,9 @@ export interface SandboxGetOptions {
   onResume?: ((sandbox: Sandbox) => Promise<void>) | undefined;
   resume?: boolean | undefined;
   signal?: AbortSignal | undefined;
+  projectId?: string | undefined;
+  teamId?: string | undefined;
+  token?: string | undefined;
 }
 
 export interface SandboxRunCommandParams {

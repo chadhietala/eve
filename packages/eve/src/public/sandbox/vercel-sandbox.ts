@@ -1,12 +1,11 @@
 import type {
+  NetworkPolicyMatch,
+  NetworkPolicyRule,
+  NetworkTransformer,
   Sandbox as SdkSandbox,
   SandboxUpdateParams,
 } from "#compiled/@vercel/sandbox/index.js";
-import type {
-  ResolvedSandboxCredentials,
-  SandboxCredentialMap,
-} from "#public/sandbox/credentials.js";
-import type { SandboxNetworkPolicy } from "#shared/sandbox-network-policy.js";
+import type { ConnectionAuthDefinition, TokenResult } from "#runtime/connections/types.js";
 
 /**
  * Options accepted by `vercel(opts)`. Forwarded to Vercel
@@ -44,12 +43,33 @@ type VercelSandboxInternalCreateOptions = {
   readonly [key: `__${string}`]: unknown;
 };
 
-/**
- * Static network policy or a per-step builder receiving brokered credentials.
- */
-export type VercelSandboxNetworkPolicy<C extends SandboxCredentialMap> =
-  | SandboxNetworkPolicy
-  | ((credentials: ResolvedSandboxCredentials<C>) => SandboxNetworkPolicy);
+/** When Eve resolves credentials attached to Vercel egress rules. */
+export type VercelSandboxCredentialResolution = "eager" | "on-request";
+
+/** An Eve-managed authenticated Vercel firewall rule. */
+export interface VercelSandboxAuthNetworkPolicyRule {
+  readonly auth: ConnectionAuthDefinition;
+  readonly credentialResolution?: VercelSandboxCredentialResolution;
+  readonly match?: NetworkPolicyMatch;
+  readonly transform: (token: TokenResult) => NetworkTransformer[];
+}
+
+/** A native Vercel rule or an Eve-managed authenticated rule. */
+export type VercelSandboxNetworkPolicyRule = NetworkPolicyRule | VercelSandboxAuthNetworkPolicyRule;
+
+/** Route-level Vercel policy shape accepted by Eve. */
+export type VercelSandboxNetworkPolicy =
+  | "allow-all"
+  | "deny-all"
+  | {
+      readonly allow?:
+        | string[]
+        | Readonly<Record<string, readonly VercelSandboxNetworkPolicyRule[]>>;
+      readonly subnets?: {
+        readonly allow?: string[];
+        readonly deny?: string[];
+      };
+    };
 
 /**
  * Options accepted by `vercel(opts)`.
@@ -57,25 +77,21 @@ export type VercelSandboxNetworkPolicy<C extends SandboxCredentialMap> =
  * The Vercel SDK create options remain available, while `credentials` and a
  * function-form `networkPolicy` opt into Eve-managed credential brokering.
  */
-export type VercelSandboxCreateOptions<C extends SandboxCredentialMap = Record<string, never>> =
-  Omit<VercelSdkSandboxCreateOptions, "networkPolicy"> & {
-    /**
-     * Credentials resolved for the active principal on every step. Interactive
-     * strategies use eve's normal authorization pause/resume flow before the
-     * credentialed policy is applied. Tokens are injected by the Vercel Sandbox
-     * firewall and never enter the sandbox filesystem or environment.
-     */
-    readonly credentials?: C;
-    /**
-     * Static policy, or a builder called with the resolved credentials.
-     *
-     * A function-form policy requires at least one credential. Unavailable
-     * non-interactive credentials are represented by an empty token. An
-     * interactive credential that requires consent parks the calling tool while
-     * the sandbox remains on the empty-token policy.
-     */
-    readonly networkPolicy?: VercelSandboxNetworkPolicy<NoInfer<C>>;
-  };
+export type VercelSandboxCreateOptions = Omit<VercelSdkSandboxCreateOptions, "networkPolicy"> & {
+  /**
+   * Default resolution mode for authenticated rules. Required when any
+   * policy rule declares `auth`.
+   */
+  readonly credentialResolution?: VercelSandboxCredentialResolution;
+  /**
+   * Public HTTPS origin used by on-request rules and their interactive
+   * authorization callbacks. Required locally; hosted Vercel deployments
+   * derive their public origin from the environment.
+   */
+  readonly authProxyBaseUrl?: string;
+  /** Static policy whose individual rules may declare `auth`. */
+  readonly networkPolicy?: VercelSandboxNetworkPolicy;
+};
 
 /**
  * Options accepted by the Vercel backend's `bootstrap({ use })` hook.
