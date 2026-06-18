@@ -36,6 +36,9 @@ export default async function sandboxEgressRoute(event: {
           name: route.sandboxName,
           resume: false,
         } as never);
+        if (sandbox.id !== meta.sandboxId) {
+          return new Response("Forbidden", { status: 403 });
+        }
 
         stage = "marker_write";
         await sandbox.writeFiles([

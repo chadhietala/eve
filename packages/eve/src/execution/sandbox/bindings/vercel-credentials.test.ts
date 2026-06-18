@@ -225,7 +225,7 @@ describe("Vercel sandbox route auth", () => {
     });
   });
 
-  it("uses the current Vercel deployment URL for preview self-callbacks", () => {
+  it("prefers the stable production URL for hosted callbacks", () => {
     vi.stubEnv("VERCEL_URL", "preview.example.vercel.app");
     vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "production.example.vercel.app");
     const { brokering } = extractVercelCredentialBrokering({
@@ -251,7 +251,7 @@ describe("Vercel sandbox route auth", () => {
         "api.example.com": [
           {
             forwardURL:
-              "https://preview.example.vercel.app/eve/v1/sandbox/egress/r0-0/sandbox-name",
+              "https://production.example.vercel.app/eve/v1/sandbox/egress/r0-0/sandbox-name",
           },
         ],
       },

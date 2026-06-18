@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const writeFiles = vi.fn(async () => {});
-const get = vi.fn(async () => ({ writeFiles }));
+const get = vi.fn(async () => ({ id: "sandbox-id", writeFiles }));
 const logError = vi.fn(() => "error-id");
 
 vi.mock("#compiled/@vercel/sandbox/index.js", () => ({ Sandbox: { get } }));
@@ -65,6 +65,19 @@ describe("sandbox egress proxy route", () => {
     expect(writeFiles).toHaveBeenCalledWith([
       expect.objectContaining({ path: "/tmp/eve-egress-demand/r2-1" }),
     ]);
+  });
+
+  it("rejects a route naming a different sandbox than the OIDC source", async () => {
+    get.mockResolvedValueOnce({ id: "different-sandbox-id", writeFiles });
+
+    const response = await sandboxEgressRoute({
+      req: new Request("https://eve.example/eve/v1/sandbox/egress/r2-1/other-sandbox/get", {
+        headers: { "vercel-sandbox-oidc-token": "signed" },
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(writeFiles).not.toHaveBeenCalled();
   });
 
   it("reports the failed proxy stage without exposing the underlying error", async () => {

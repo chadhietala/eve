@@ -56,6 +56,47 @@ describe("Vercel on-request sandbox processes", () => {
     expect(resolveDemand).not.toHaveBeenCalled();
   });
 
+  it("streams output from a running command without retaining the full log", async () => {
+    vi.useFakeTimers();
+    try {
+      let finish!: (result: { exitCode: number }) => void;
+      const runningCommand = {
+        async *logs() {
+          yield { data: "progress\n", stream: "stdout" as const };
+        },
+        wait: vi.fn(
+          async () =>
+            await new Promise<{ exitCode: number }>((resolve) => {
+              finish = resolve;
+            }),
+        ),
+        kill: vi.fn(async () => {}),
+      } as never;
+      const sdk = sandbox([runningCommand]);
+      const session = createVercelInternalSandboxSession(sdk, "sandbox", {
+        hasDemand: async () => false,
+        resolveDemand: async () => {},
+      });
+
+      const process = await session.spawn({ command: "long-running-command" });
+      const reader = process.stdout.getReader();
+      const waited = process.wait();
+      const firstChunk = reader.read();
+      await vi.advanceTimersByTimeAsync(101);
+
+      await expect(firstChunk).resolves.toMatchObject({
+        done: false,
+        value: new TextEncoder().encode("progress\n"),
+      });
+
+      finish({ exitCode: 0 });
+      await vi.advanceTimersByTimeAsync(0);
+      await expect(waited).resolves.toEqual({ exitCode: 0 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("resolves a completed demand and replays the awaited command", async () => {
     const sdk = sandbox([command(0), command(0)]);
     let demanded = true;

@@ -74,8 +74,8 @@ export type VercelSandboxNetworkPolicy =
 /**
  * Options accepted by `vercel(opts)`.
  *
- * The Vercel SDK create options remain available, while `credentials` and a
- * function-form `networkPolicy` opt into Eve-managed credential brokering.
+ * The Vercel SDK create options remain available. Record-form `networkPolicy`
+ * rules may attach `auth` for Eve-managed credential resolution.
  */
 export type VercelSandboxCreateOptions = Omit<VercelSdkSandboxCreateOptions, "networkPolicy"> & {
   /**
