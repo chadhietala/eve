@@ -9,13 +9,6 @@ export interface Resource {
 
 export const resources: Resource[] = [
   {
-    kind: "Reference",
-    title: "Eve Knowledge Base",
-    description:
-      "Vercel's Eve hub with getting-started guides, build guides, templates, docs, integrations, and community links.",
-    href: "https://vercel.com/kb/eve",
-  },
-  {
     kind: "Guide",
     title: "Build your first agent",
     description:
@@ -59,16 +52,9 @@ export const resources: Resource[] = [
   },
   {
     kind: "Reference",
-    title: "Integrations gallery",
+    title: "Eve Knowledge Base",
     description:
-      "Browse built-in channels and connections, including setup steps for Slack, Linear, GitHub, Notion, and more.",
-    href: "/integrations",
-  },
-  {
-    kind: "Community",
-    title: "GitHub Discussions",
-    description:
-      "Ask questions, share what you're building, and follow framework conversations with the eve community.",
-    href: "https://github.com/vercel/eve/discussions",
+      "Vercel's Eve hub with getting-started guides, build guides, templates, docs, integrations, and community links.",
+    href: "https://vercel.com/kb/eve",
   },
 ];
