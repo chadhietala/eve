@@ -22,6 +22,10 @@ export const nav = [
     href: "/integrations",
   },
   {
+    label: "Resources",
+    href: "/resources",
+  },
+  {
     label: "GitHub",
     href: `https://github.com/${github.owner}/${github.repo}/`,
   },
