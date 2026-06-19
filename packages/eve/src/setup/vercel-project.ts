@@ -42,6 +42,17 @@ export type VercelProjectReference = z.infer<typeof VercelProjectReferenceSchema
 export interface PickProjectOptions extends VercelProjectOperationOptions {
   /** Whether an empty project list may fall back to entering a name to create. */
   allowCreateWhenEmpty?: boolean;
+  /** Question shown when choosing an existing project. */
+  message?: string;
+}
+
+export interface PickTeamOptions extends VercelProjectOperationOptions {
+  /** Keep the team choice visible even when only one team is available. */
+  promptWhenSingle?: boolean;
+  /** Question shown when choosing a team. */
+  message?: string;
+  /** Team highlighted when the flow returns to this picker. */
+  initialValue?: string;
 }
 
 export function unresolvedProject(): ProjectResolution {
@@ -345,7 +356,7 @@ export async function pickTeam(
   prompter: Prompter,
   projectRoot: string,
   presetTeam: string | undefined,
-  options: VercelProjectOperationOptions = {},
+  options: PickTeamOptions = {},
 ): Promise<string> {
   if (presetTeam !== undefined) {
     await validateTeam(prompter, projectRoot, presetTeam, options);
@@ -354,18 +365,19 @@ export async function pickTeam(
   const teams = await withNetworkSpinner(prompter, whimsyFor("teams"), () =>
     listTeams(projectRoot, options),
   );
-  if (teams.length <= 1) {
+  if (teams.length <= 1 && options.promptWhenSingle !== true) {
     return teams.find((team) => team.current)?.slug ?? (await whoamiScope(projectRoot, options));
   }
+  if (teams.length === 0) return whoamiScope(projectRoot, options);
   return prompter.select({
-    message: "Select your team",
+    message: options.message ?? "Select your team",
     search: true,
     placeholder: "type to search teams",
     options: teams.map((team) => ({
       value: team.slug,
       label: team.current ? `${team.name} (current)` : team.name,
     })),
-    initialValue: teams.find((team) => team.current)?.slug,
+    initialValue: options.initialValue ?? teams.find((team) => team.current)?.slug,
   });
 }
 
@@ -407,6 +419,7 @@ export async function pickProject(
   const project = await pickExistingVercelProject({
     prompter,
     team,
+    message: options.message ?? "Project to link",
     projects,
     search: (query) =>
       withNetworkSpinner(prompter, `Searching ${team} for "${query}"...`, () =>
@@ -487,24 +500,45 @@ export async function linkProject(
     }
     project = existing;
   }
-  await withNetworkSpinner(
+  await linkResolvedVercelProject({
     prompter,
-    `Linking this directory to Vercel project "${project.name}"...`,
+    projectRoot,
+    project,
+    signal: options.signal,
+  });
+  return true;
+}
+
+/** Links one parsed project identity without resolving it through Vercel again. */
+export async function linkResolvedVercelProject(input: {
+  readonly prompter: Prompter;
+  readonly projectRoot: string;
+  readonly project: VercelProjectReference;
+  readonly signal?: AbortSignal;
+}): Promise<void> {
+  await withNetworkSpinner(
+    input.prompter,
+    `Linking this directory to Vercel project "${input.project.name}"...`,
     () =>
       writeProjectLink({
-        projectRoot,
+        projectRoot: input.projectRoot,
         link: {
-          projectId: project.id,
-          orgId: project.accountId,
-          projectName: project.name,
+          projectId: input.project.id,
+          orgId: input.project.accountId,
+          projectName: input.project.name,
         },
-        signal: options.signal,
+        signal: input.signal,
       }),
   );
 
-  const link = await readProjectLink(projectRoot);
-  if (link === undefined || link.projectId !== project.id || link.orgId !== project.accountId) {
-    throw new Error(`Linked project identity did not match Vercel project "${project.name}".`);
+  const link = await readProjectLink(input.projectRoot);
+  if (
+    link === undefined ||
+    link.projectId !== input.project.id ||
+    link.orgId !== input.project.accountId
+  ) {
+    throw new Error(
+      `Linked project identity did not match Vercel project "${input.project.name}".`,
+    );
   }
-  return true;
 }
