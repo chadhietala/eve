@@ -9,9 +9,7 @@ import {
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { DocsLayout } from "@/components/geistdocs/docs-layout";
 import { translations } from "@/geistdocs";
-import { source } from "@/lib/geistdocs/source";
 import { type Resource, resources, type ResourceKind } from "@/lib/resources/data";
 
 const title = "Resources";
@@ -26,11 +24,16 @@ const iconByKind: Record<ResourceKind, LucideIcon> = {
 };
 
 const kindClassName: Record<ResourceKind, string> = {
-  Community: "bg-gray-100 text-gray-900",
-  Example: "bg-amber-100 text-amber-900",
-  Guide: "bg-blue-100 text-blue-800",
-  Reference: "bg-teal-100 text-teal-900",
-  Template: "bg-violet-100 text-violet-900",
+  Community:
+    "border-gray-200 bg-gray-100 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400",
+  Example:
+    "border-amber-200 bg-amber-100 text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300",
+  Guide:
+    "border-blue-200 bg-blue-100 text-blue-800 dark:border-blue-500/25 dark:bg-blue-500/10 dark:text-blue-300",
+  Reference:
+    "border-teal-200 bg-teal-100 text-teal-900 dark:border-teal-500/25 dark:bg-teal-500/10 dark:text-teal-300",
+  Template:
+    "border-violet-200 bg-violet-100 text-violet-900 dark:border-violet-500/25 dark:bg-violet-500/10 dark:text-violet-300",
 };
 
 export const metadata: Metadata = {
@@ -39,12 +42,6 @@ export const metadata: Metadata = {
 };
 
 export const generateStaticParams = () => Object.keys(translations).map((lang) => ({ lang }));
-
-interface ResourcesPageProps {
-  params: Promise<{
-    lang: keyof typeof translations;
-  }>;
-}
 
 const ResourceCard = ({ resource }: { resource: Resource }) => {
   const Icon = iconByKind[resource.kind];
@@ -58,7 +55,7 @@ const ResourceCard = ({ resource }: { resource: Resource }) => {
           <Icon aria-hidden className="size-5" />
         </span>
         <span
-          className={`rounded-full px-2.5 py-0.5 font-medium text-xs ${kindClassName[resource.kind]}`}
+          className={`rounded-full border px-2.5 py-0.5 font-medium text-xs ${kindClassName[resource.kind]}`}
         >
           {resource.kind}
         </span>
@@ -93,26 +90,18 @@ const ResourceCard = ({ resource }: { resource: Resource }) => {
   );
 };
 
-const ResourcesPage = async ({ params }: ResourcesPageProps) => {
-  const { lang } = await params;
-
-  return (
-    <div className="bg-background-100">
-      <DocsLayout tree={source.pageTree[lang]}>
-        <main className="mx-auto w-full max-w-[920px] px-4 pt-12 pb-24 sm:px-6 lg:px-8">
-          <header className="mb-10">
-            <h1 className="font-semibold text-4xl text-gray-1000 tracking-tight">{title}</h1>
-            <p className="mt-3 max-w-2xl text-gray-900 text-lg">{description}</p>
-          </header>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {resources.map((resource) => (
-              <ResourceCard key={resource.title} resource={resource} />
-            ))}
-          </div>
-        </main>
-      </DocsLayout>
+const ResourcesPage = () => (
+  <main className="mx-auto w-full max-w-[1080px] px-4 pt-12 pb-24 sm:px-6 lg:px-8">
+    <header className="mb-10">
+      <h1 className="font-semibold text-4xl text-gray-1000 tracking-tight">{title}</h1>
+      <p className="mt-3 max-w-2xl text-gray-900 text-lg">{description}</p>
+    </header>
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {resources.map((resource) => (
+        <ResourceCard key={resource.title} resource={resource} />
+      ))}
     </div>
-  );
-};
+  </main>
+);
 
 export default ResourcesPage;
