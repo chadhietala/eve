@@ -8,13 +8,23 @@ import type { GeneratedCompiledArtifactsFiles } from "#internal/application/comp
  */
 export type NitroBuildSurface = "all" | "app" | "flow";
 
-/**
- * Handle returned after starting one Nitro development server.
- */
-export interface DevelopmentServerHandle {
+/** A Nitro development server started and owned by the current process. */
+export interface StartedDevelopmentServer {
+  readonly kind: "started";
+  readonly appRoot: string;
   close(): Promise<void>;
-  url: string;
+  readonly url: string;
 }
+
+/** A live development server owned by another process. */
+export interface ExistingDevelopmentServer {
+  readonly kind: "existing";
+  readonly appRoot: string;
+  readonly url: string;
+}
+
+/** Result of resolving a development server for an app root. */
+export type DevelopmentServerHandle = StartedDevelopmentServer | ExistingDevelopmentServer;
 
 /**
  * Handle returned after starting one built Nitro server.

@@ -101,6 +101,54 @@ describe("eve dev --logs", () => {
   });
 });
 
+describe("eve dev local server ownership", () => {
+  it("uses the host's canonical root and leaves an attached server running", async () => {
+    const startHost = vi.fn(async () => ({
+      kind: "existing" as const,
+      appRoot: "/canonical/app",
+      url: "http://127.0.0.1:4321/",
+    }));
+    const runDevelopmentTui = vi.fn(async () => {});
+
+    await withInteractiveTerminal(() =>
+      runCli(["dev"], { error: () => {}, log: () => {} }, { runDevelopmentTui, startHost }),
+    );
+
+    expect(startHost).toHaveBeenCalledWith(expect.any(String), {
+      existing: "attach-if-unconfigured",
+      host: undefined,
+      port: undefined,
+    });
+    expect(runDevelopmentTui).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appRoot: "/canonical/app",
+        name: "App",
+        serverUrl: "http://127.0.0.1:4321/",
+      }),
+    );
+  });
+
+  it("closes a server started for the interactive TUI", async () => {
+    const close = vi.fn(async () => {});
+    const startHost = vi.fn(async () => ({
+      kind: "started" as const,
+      appRoot: "/canonical/app",
+      close,
+      url: "http://127.0.0.1:4321/",
+    }));
+
+    await withInteractiveTerminal(() =>
+      runCli(
+        ["dev"],
+        { error: () => {}, log: () => {} },
+        { runDevelopmentTui: vi.fn(async () => {}), startHost },
+      ),
+    );
+
+    expect(close).toHaveBeenCalledOnce();
+  });
+});
+
 describe("resolveDevUiMode", () => {
   it("defaults to the terminal UI in an interactive terminal", () => {
     expect(resolveDevUiMode({ options: {}, interactive: true })).toBe("tui");

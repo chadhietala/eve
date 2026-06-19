@@ -7,6 +7,7 @@ import { eveCliBanner } from "#cli/banner.js";
 import { registerProjectCommands } from "#cli/commands/register-project-commands.js";
 import { LOG_DISPLAY_MODES, parseLogDisplayMode } from "#cli/dev/tui/log-display-mode.js";
 import { parseDevelopmentServerUrl } from "#cli/dev/url.js";
+import type { DevelopmentServerHandle } from "#internal/nitro/host/types.js";
 import { createCliTheme, renderCliTaggedLine } from "#cli/ui/output.js";
 import type {
   AssistantResponseStatsMode,
@@ -41,11 +42,6 @@ interface ProductionCliOptions {
   port?: number;
 }
 
-interface DevelopmentServerHandle {
-  readonly url: string;
-  close(): Promise<void>;
-}
-
 interface ProductionServerHandle {
   readonly url: string;
   close(): Promise<void>;
@@ -70,9 +66,9 @@ interface CliRuntimeDependencies {
   startHost(
     appRoot: string,
     options?: {
+      existing?: "attach-if-unconfigured" | "reject";
       host?: string;
       port?: number;
-      reuseExisting?: boolean;
     },
   ): Promise<DevelopmentServerHandle>;
   startProductionHost(
@@ -510,29 +506,10 @@ function createCliProgram(logger: CliLogger, runtime: CliRuntimeOverrides): Comm
       if (options.input !== undefined && mode === "headless") {
         throw new InvalidArgumentError("--input requires the interactive UI.");
       }
-      const { loadDevelopmentEnvironmentFiles } = await import("#cli/dev/environment.js");
-
-      loadDevelopmentEnvironmentFiles(appRoot);
-
-      // Resolve early so the TUI title uses the same app root the host will own.
-      let localAppRoot: string | undefined;
-      if (remoteServerUrl === undefined) {
-        const { resolveDiscoveryProject } = await import("#discover/project.js");
-        try {
-          localAppRoot = (await resolveDiscoveryProject(appRoot)).appRoot;
-        } catch {
-          localAppRoot = appRoot;
-        }
-      }
-
-      // An explicit endpoint means the user asked for a specific server, so a
-      // TUI session must not silently attach to a different recorded one.
-      const hasExplicitEndpoint =
-        options.host !== undefined ||
-        options.port !== undefined ||
-        (process.env.PORT?.trim() ?? "") !== "";
-
-      const runInteractiveUi = async (serverUrl: string): Promise<void> => {
+      const runInteractiveUi = async (input: {
+        readonly appRoot?: string;
+        readonly serverUrl: string;
+      }): Promise<void> => {
         logger.log("");
 
         const runDevelopmentTui = runtime.runDevelopmentTui ?? (await loadRunDevelopmentTui());
@@ -540,15 +517,15 @@ function createCliProgram(logger: CliLogger, runtime: CliRuntimeOverrides): Comm
         const title = resolveTuiTitle({
           name: options.name,
           remoteServerUrl,
-          appRoot: localAppRoot ?? appRoot,
+          appRoot: input.appRoot ?? appRoot,
         });
         if (title !== undefined) display.name = title;
         const tuiInput: Parameters<CliRuntimeDependencies["runDevelopmentTui"]>[0] = {
-          serverUrl,
+          serverUrl: input.serverUrl,
           ...display,
         };
-        if (remoteServerUrl === undefined) {
-          tuiInput.appRoot = localAppRoot ?? appRoot;
+        if (input.appRoot !== undefined) {
+          tuiInput.appRoot = input.appRoot;
         }
         if (options.input !== undefined) {
           tuiInput.initialInput = options.input;
@@ -557,6 +534,8 @@ function createCliProgram(logger: CliLogger, runtime: CliRuntimeOverrides): Comm
       };
 
       if (remoteServerUrl) {
+        const { loadDevelopmentEnvironmentFiles } = await import("#cli/dev/environment.js");
+        loadDevelopmentEnvironmentFiles(appRoot);
         logger.log(
           renderCliTaggedLine(theme, {
             message: `connecting to ${remoteServerUrl}`,
@@ -576,20 +555,20 @@ function createCliProgram(logger: CliLogger, runtime: CliRuntimeOverrides): Comm
           return;
         }
 
-        await runInteractiveUi(remoteServerUrl);
+        await runInteractiveUi({ serverUrl: remoteServerUrl });
         return;
       }
 
       const startHost = runtime.startHost ?? (await loadStartHost());
-      const server = await startHost(localAppRoot ?? appRoot, {
+      const server = await startHost(appRoot, {
+        existing: mode === "tui" ? "attach-if-unconfigured" : "reject",
         host: options.host,
         port: options.port,
-        reuseExisting: mode === "tui" && !hasExplicitEndpoint,
       });
       let closed = false;
 
       const closeServer = async () => {
-        if (closed) {
+        if (closed || server.kind === "existing") {
           return;
         }
 
@@ -630,7 +609,7 @@ function createCliProgram(logger: CliLogger, runtime: CliRuntimeOverrides): Comm
           });
         }
 
-        await runInteractiveUi(server.url);
+        await runInteractiveUi({ appRoot: server.appRoot, serverUrl: server.url });
       } finally {
         await closeServer();
       }
