@@ -25,15 +25,15 @@ const iconByKind: Record<ResourceKind, LucideIcon> = {
 
 const kindClassName: Record<ResourceKind, string> = {
   Community:
-    "border-gray-200 bg-gray-100 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400",
+    "border-gray-200 bg-gray-100 text-gray-900 dark:border-gray-700 dark:bg-transparent dark:text-gray-900",
   Example:
-    "border-amber-200 bg-amber-100 text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300",
+    "border-amber-200 bg-amber-100 text-amber-900 dark:border-gray-700 dark:bg-transparent dark:text-gray-900",
   Guide:
-    "border-blue-200 bg-blue-100 text-blue-800 dark:border-blue-500/25 dark:bg-blue-500/10 dark:text-blue-300",
+    "border-blue-200 bg-blue-100 text-blue-800 dark:border-gray-700 dark:bg-transparent dark:text-gray-900",
   Reference:
-    "border-teal-200 bg-teal-100 text-teal-900 dark:border-teal-500/25 dark:bg-teal-500/10 dark:text-teal-300",
+    "border-teal-200 bg-teal-100 text-teal-900 dark:border-gray-700 dark:bg-transparent dark:text-gray-900",
   Template:
-    "border-violet-200 bg-violet-100 text-violet-900 dark:border-violet-500/25 dark:bg-violet-500/10 dark:text-violet-300",
+    "border-violet-200 bg-violet-100 text-violet-900 dark:border-gray-700 dark:bg-transparent dark:text-gray-900",
 };
 
 export const metadata: Metadata = {
