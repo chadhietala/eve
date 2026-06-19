@@ -7,11 +7,11 @@ const title = "Resources";
 const description = "Guides, templates, and examples to help you build with eve.";
 
 const kindClassName: Record<ResourceKind, string> = {
-  Community: "bg-gray-200 text-gray-900 dark:bg-gray-300 dark:text-gray-1000",
-  Example: "bg-gray-200 text-gray-900 dark:bg-gray-300 dark:text-gray-1000",
-  Guide: "bg-gray-200 text-gray-900 dark:bg-gray-300 dark:text-gray-1000",
-  Reference: "bg-gray-200 text-gray-900 dark:bg-gray-300 dark:text-gray-1000",
-  Template: "bg-gray-200 text-gray-900 dark:bg-gray-300 dark:text-gray-1000",
+  Community: "border-transparent bg-gray-300 text-gray-1000",
+  Example: "border-transparent bg-gray-300 text-gray-1000",
+  Guide: "border-transparent bg-gray-300 text-gray-1000",
+  Reference: "border-transparent bg-gray-300 text-gray-1000",
+  Template: "border-transparent bg-gray-300 text-gray-1000",
 };
 
 export const metadata: Metadata = {
@@ -24,22 +24,18 @@ export const generateStaticParams = () => Object.keys(translations).map((lang) =
 const ResourceCard = ({ resource }: { resource: Resource }) => {
   const isExternal = resource.href.startsWith("https://");
   const className =
-    "group flex min-h-[172px] flex-col rounded-xl border border-gray-alpha-400 bg-background-100 p-6 transition-colors hover:border-gray-alpha-500 hover:bg-gray-100 dark:bg-gray-100 dark:hover:bg-gray-200";
+    "flex h-full flex-col gap-3 rounded-xl border border-gray-alpha-400 bg-background-100 p-6 no-underline shadow-none transition-colors hover:bg-gray-100 dark:bg-gray-100 dark:hover:bg-gray-200";
   const content = (
     <>
       <span
-        className={`w-fit rounded-full px-3 py-1 font-medium text-xs xl:text-sm ${kindClassName[resource.kind]}`}
+        className={`inline-flex w-fit shrink-0 items-center justify-center rounded-full border px-2 py-0.5 font-medium text-xs ${kindClassName[resource.kind]}`}
       >
         {resource.kind}
       </span>
-      <div className="mt-6 flex flex-col gap-4 xl:mt-7 xl:gap-5">
-        <h2 className="line-clamp-2 font-medium text-gray-1000 text-xl leading-tight tracking-tight xl:text-2xl">
-          {resource.title}
-        </h2>
-        <p className="line-clamp-2 text-base text-gray-900 leading-relaxed xl:text-lg">
-          {resource.description}
-        </p>
-      </div>
+      <h2 className="line-clamp-2 text-balance font-medium text-base text-gray-1000 leading-snug">
+        {resource.title}
+      </h2>
+      <p className="line-clamp-2 text-gray-900 text-sm">{resource.description}</p>
     </>
   );
 
@@ -59,12 +55,14 @@ const ResourceCard = ({ resource }: { resource: Resource }) => {
 };
 
 const ResourcesPage = () => (
-  <main className="mx-auto w-full max-w-[1908px] px-4 pt-12 pb-24 sm:px-8 lg:px-16">
-    <header className="mb-16">
-      <h1 className="font-semibold text-4xl text-gray-1000 tracking-tight">{title}</h1>
-      <p className="mt-3 max-w-2xl text-gray-900 text-lg">{description}</p>
+  <main className="mx-auto w-full max-w-5xl px-4 pt-16 pb-16 sm:pt-24">
+    <header className="space-y-4 pb-8">
+      <h1 className="text-balance font-semibold text-[40px] text-gray-1000 leading-[1.1] tracking-tight sm:text-5xl">
+        {title}
+      </h1>
+      <p className="max-w-2xl text-gray-900 text-lg leading-relaxed">{description}</p>
     </header>
-    <div className="grid gap-5 sm:grid-cols-2 md:grid-cols-3">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {resources.map((resource) => (
         <ResourceCard key={resource.title} resource={resource} />
       ))}
