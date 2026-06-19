@@ -329,11 +329,11 @@ describe("TerminalRenderer (inline scrollback)", () => {
     try {
       const { input, renderer } = makeRenderer();
       const prompt = renderer.readPrompt();
-      input.send("\x1b[200~stuck"); // paste start, closing marker never arrives
+      input.send("\x1b[200~first\nsecond"); // paste start, closing marker never arrives
       vi.advanceTimersByTime(1_100); // past the incomplete-paste flush
       input.type("X"); // input still works rather than being wedged
       input.enter();
-      expect(await prompt).toBe("stuckX");
+      expect(await prompt).toBe("first\nsecondX");
       renderer.shutdown();
     } finally {
       vi.useRealTimers();
@@ -1367,6 +1367,28 @@ describe("TerminalRenderer (inline scrollback)", () => {
 
     await expect(approval).resolves.toEqual({ approved: false, reason: "Denied by user." });
     renderer.shutdown();
+  });
+
+  it("does not treat an unterminated bracketed paste as a tool approval action", async () => {
+    vi.useFakeTimers();
+    try {
+      const { input, renderer } = makeRenderer();
+      const approval = renderer.readToolApproval({
+        approvalId: "a1",
+        toolCallId: "c1",
+        toolName: "delete_files",
+        input: { path: "/" },
+      });
+
+      input.send("\x1b[200~y");
+      vi.advanceTimersByTime(1_100);
+      input.type("n");
+
+      await expect(approval).resolves.toEqual({ approved: false, reason: "Denied by user." });
+      renderer.shutdown();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("commits a dim recovery notice to scrollback", () => {

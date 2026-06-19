@@ -94,6 +94,7 @@ import {
   formatTokenFlow,
   isIncompletePaste,
   nextKey,
+  sanitizePastedText,
   stripPasteStart,
   stripPromptControlCharacters,
   takeUntil,
@@ -1798,14 +1799,17 @@ export class TerminalRenderer implements AgentTUIRenderer {
       return;
     }
     // A bracketed paste whose closing marker never arrives would otherwise wedge
-    // input forever. Abandon the framing and re-decode the buffer as ordinary
-    // input so the session recovers.
+    // input forever. Recover its sanitized payload without losing the paste
+    // framing that downstream consumers use to apply paste-safe behavior.
     if (isIncompletePaste(this.#keyBuffer)) {
       const stuck = this.#keyBuffer;
       this.#keyFlushTimer = setTimeout(() => {
         if (this.#keyBuffer !== stuck) return;
-        this.#keyBuffer = stripPasteStart(this.#keyBuffer);
-        this.#drainKeys();
+        const value = sanitizePastedText(stripPasteStart(stuck));
+        this.#keyBuffer = "";
+        if (value.length > 0) {
+          this.#consumeKey?.({ type: "text", value, framing: "bracketed-paste" });
+        }
       }, incompletePasteFlushMs);
       this.#keyFlushTimer.unref?.();
     }

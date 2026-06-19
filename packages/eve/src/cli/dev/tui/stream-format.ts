@@ -82,7 +82,7 @@ export function isIncompletePaste(buffer: string): boolean {
   return buffer.startsWith(PASTE_START) && !buffer.includes(PASTE_END, PASTE_START.length);
 }
 
-/** Drops a leading bracketed-paste start marker, leaving the payload as plain input. */
+/** Drops a leading bracketed-paste start marker, leaving the buffered payload. */
 export function stripPasteStart(buffer: string): string {
   return buffer.startsWith(PASTE_START) ? buffer.slice(PASTE_START.length) : buffer;
 }

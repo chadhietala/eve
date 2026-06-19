@@ -38,7 +38,7 @@ describe("incomplete bracketed paste", () => {
     expect(isIncompletePaste("plain text")).toBe(false);
   });
 
-  it("strips the start marker so a stuck paste can re-decode as plain input", () => {
+  it("strips the start marker so recovery can read the buffered payload", () => {
     expect(stripPasteStart("\x1b[200~oops")).toBe("oops");
     expect(stripPasteStart("no marker")).toBe("no marker");
   });
