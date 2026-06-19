@@ -9,6 +9,13 @@ export interface Resource {
 
 export const resources: Resource[] = [
   {
+    kind: "Reference",
+    title: "Eve Knowledge Base",
+    description:
+      "Vercel's Eve hub with getting-started guides, build guides, templates, docs, integrations, and community links.",
+    href: "https://vercel.com/kb/eve",
+  },
+  {
     kind: "Guide",
     title: "Build your first agent",
     description:
@@ -31,24 +38,17 @@ export const resources: Resource[] = [
   },
   {
     kind: "Template",
-    title: "eve Chat Template",
+    title: "Eve Chat Template",
     description:
-      "A persisted Next.js chat app with Better Auth, Neon, Upstash Redis, Notion MCP, and durable eve session state.",
-    href: "https://github.com/vercel-labs/eve-chat-template",
-  },
-  {
-    kind: "Guide",
-    title: "eve Slack Agent Starter",
-    description:
-      "Provision a Slack connector on Vercel and deploy an eve agent that can answer DMs and mentions.",
-    href: "https://vercel.com/kb/guide/eve-slack-agent-starter",
+      "A persisted Next.js chat template for Eve, built with shadcn/ui, Tailwind CSS, Streamdown, Better Auth, Drizzle, Neon, and Upstash Redis.",
+    href: "https://vercel.com/templates/eve/eve-chat-template",
   },
   {
     kind: "Template",
-    title: "eve Slack Agent Template",
+    title: "Eve Slack Agent",
     description:
-      "A minimal Slack channel project with an eve agent, deploy button, and Vercel Connect-backed credentials.",
-    href: "https://github.com/vercel-labs/eve-slack-agent-template",
+      "A Slack agent template with webhook handling, Vercel Connect, a starter agent, and an example tool ready to deploy on Vercel.",
+    href: "https://vercel.com/templates/eve/eve-slack-agent",
   },
   {
     kind: "Example",
