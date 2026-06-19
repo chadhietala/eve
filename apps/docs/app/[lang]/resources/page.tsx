@@ -28,15 +28,17 @@ const ResourceCard = ({ resource }: { resource: Resource }) => {
   const content = (
     <>
       <span
-        className={`w-fit rounded-full px-3 py-1 font-medium text-sm ${kindClassName[resource.kind]}`}
+        className={`w-fit rounded-full px-3 py-1 font-medium text-xs xl:text-sm ${kindClassName[resource.kind]}`}
       >
         {resource.kind}
       </span>
-      <div className="mt-7 flex flex-col gap-5">
-        <h2 className="line-clamp-2 font-medium text-2xl text-gray-1000 leading-tight tracking-tight">
+      <div className="mt-6 flex flex-col gap-4 xl:mt-7 xl:gap-5">
+        <h2 className="line-clamp-2 font-medium text-gray-1000 text-xl leading-tight tracking-tight xl:text-2xl">
           {resource.title}
         </h2>
-        <p className="line-clamp-2 text-gray-900 text-lg leading-relaxed">{resource.description}</p>
+        <p className="line-clamp-2 text-base text-gray-900 leading-relaxed xl:text-lg">
+          {resource.description}
+        </p>
       </div>
     </>
   );
