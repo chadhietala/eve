@@ -1788,7 +1788,12 @@ export class TerminalRenderer implements AgentTUIRenderer {
    */
   #armKeyFlush() {
     // A lone trailing ESC may begin an arrow/function key; hold it briefly, then
-    // surface it as a bare Escape.
+    // surface it as a bare Escape. This is the standard ESC-timeout heuristic: a
+    // lone ESC and the leading byte of a longer sequence are indistinguishable,
+    // so a paste whose `\x1b[200~` leader is split off by >escFlushMs (only under
+    // network/PTY fragmentation, never an atomically-delivered local paste) can
+    // be misread as Escape + literal text. Lengthening the timeout trades Escape
+    // latency for a smaller window; not worth it for a non-adversarial edge.
     if (this.#keyBuffer === "\x1b") {
       this.#keyFlushTimer = setTimeout(() => {
         if (this.#keyBuffer !== "\x1b") return;

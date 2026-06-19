@@ -109,6 +109,13 @@ describe("line editing", () => {
     expect(deleteWord({ text: "trailing   ", cursor: 11 })).toEqual({ text: "", cursor: 0 });
   });
 
+  it("bounds delete-word to the current line", () => {
+    // Deletes within the current line, leaving the newline and the line above.
+    expect(deleteWord({ text: "one\ntwo", cursor: 7 })).toEqual({ text: "one\n", cursor: 4 });
+    // At the start of a line there is nothing on it to delete; no line merge.
+    expect(deleteWord({ text: "one\ntwo", cursor: 4 })).toEqual({ text: "one\ntwo", cursor: 4 });
+  });
+
   it("routes editing keys while leaving controller keys unhandled", () => {
     const line = { text: "abc", cursor: 1 };
 

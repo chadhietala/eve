@@ -104,6 +104,16 @@ describe("nextKey", () => {
     });
   });
 
+  it("sanitizes the paste payload as it decodes, not just at insert time", () => {
+    // A hostile frame carrying ESC and a bell must come out stripped, pinning
+    // the sanitize call on the decode path itself.
+    const buffer = "\x1b[200~a\x1b[31mb\x07c\x1b[201~";
+    expect(nextKey(buffer)).toEqual({
+      key: { type: "text", value: "a[31mbc", framing: "bracketed-paste" },
+      consumed: buffer.length,
+    });
+  });
+
   it("waits for the bracketed-paste end marker before decoding", () => {
     expect(nextKey("\x1b[200~still arriving")).toEqual({ consumed: 0, incomplete: true });
   });

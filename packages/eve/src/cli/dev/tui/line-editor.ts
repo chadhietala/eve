@@ -109,13 +109,16 @@ export function killToStart(state: LineState): LineState {
 /** Deletes the whitespace-delimited word before the caret (Ctrl+W). */
 export function deleteWord(state: LineState): LineState {
   if (state.cursor === 0) return state;
+  // Bound to the current logical line, like killToEnd/killToStart: Ctrl+W stops
+  // at the line start instead of reaching up and merging the line above.
+  const lineStart = logicalLineStart(state.text, state.cursor);
   let start = state.cursor;
-  while (start > 0) {
+  while (start > lineStart) {
     const previous = previousGraphemeBoundary(state.text, start);
     if (!isWhitespace(state.text.slice(previous, start))) break;
     start = previous;
   }
-  while (start > 0) {
+  while (start > lineStart) {
     const previous = previousGraphemeBoundary(state.text, start);
     if (isWhitespace(state.text.slice(previous, start))) break;
     start = previous;
