@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isLocalDevelopmentHostname,
+  isLocalDevelopmentServerUrl,
   isLoopbackHostname,
-  isLoopbackServerUrl,
   isReservedIpAddress,
 } from "#shared/network-address.js";
 
@@ -20,21 +21,43 @@ describe("isLoopbackHostname", () => {
   });
 });
 
-describe("isLoopbackServerUrl", () => {
-  it("accepts http(s) URLs on loopback hosts", () => {
-    for (const url of ["http://127.0.0.1:2000/", "http://localhost:3000", "https://[::1]:8080/x"]) {
-      expect(isLoopbackServerUrl(url), url).toBe(true);
+describe("isLocalDevelopmentHostname", () => {
+  it("accepts the exact local development hosts", () => {
+    for (const host of ["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]) {
+      expect(isLocalDevelopmentHostname(host), host).toBe(true);
     }
   });
 
-  it("rejects non-loopback hosts, non-http schemes, and junk", () => {
+  it("rejects hosts outside the exact set, including broader loopback forms", () => {
+    // Deliberately narrower than isLoopbackHostname: a 127.0.0.0/8 address or a
+    // *.localhost name could resolve off-box, so it must not be a credential or
+    // reuse target.
+    for (const host of ["127.1.2.3", "app.localhost", "example.com", "10.0.0.1", "::"]) {
+      expect(isLocalDevelopmentHostname(host), host).toBe(false);
+    }
+  });
+});
+
+describe("isLocalDevelopmentServerUrl", () => {
+  it("accepts http(s) URLs on the exact local development hosts", () => {
     for (const url of [
-      "http://evil.example/",
+      "http://localhost:2000/",
+      "http://127.0.0.1:3000",
       "http://0.0.0.0:2000/",
-      "ftp://127.0.0.1/",
+      "https://[::1]:8080/x",
+    ]) {
+      expect(isLocalDevelopmentServerUrl(url), url).toBe(true);
+    }
+  });
+
+  it("rejects broader loopback hosts, remote hosts, and junk", () => {
+    for (const url of [
+      "http://127.1.2.3:2000/",
+      "http://app.localhost/",
+      "http://evil.example/",
       "nope",
     ]) {
-      expect(isLoopbackServerUrl(url), url).toBe(false);
+      expect(isLocalDevelopmentServerUrl(url), url).toBe(false);
     }
   });
 });

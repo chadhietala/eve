@@ -59,13 +59,35 @@ export function isLoopbackHostname(hostname: string): boolean {
   return family === 6 && normalized === "::1";
 }
 
-/** Returns whether `urlText` is an HTTP(S) URL with a loopback hostname. */
-export function isLoopbackServerUrl(urlText: string): boolean {
+/**
+ * Hostnames the dev client and the dev-server reuse gate both treat as a local
+ * development target. The dev client skips Vercel OIDC/bypass credentials for
+ * these, and reuse only attaches to a recorded server on one of them. The two
+ * decisions MUST use the same predicate, so the set lives here. It is a narrow
+ * exact allow-list, deliberately stricter than {@link isLoopbackHostname} (no
+ * `127.0.0.0/8` block, no `*.localhost`): anything outside it could resolve
+ * off-box, and must neither receive forwarded credentials nor be reattached to.
+ */
+const LOCAL_DEVELOPMENT_HOSTNAMES: ReadonlySet<string> = new Set([
+  "localhost",
+  "127.0.0.1",
+  "0.0.0.0",
+  "::1",
+  "[::1]",
+]);
+
+/** Returns whether `hostname` is a recognized local development host. */
+export function isLocalDevelopmentHostname(hostname: string): boolean {
+  return LOCAL_DEVELOPMENT_HOSTNAMES.has(hostname);
+}
+
+/**
+ * Returns whether `serverUrl` targets a recognized local development host.
+ * Invalid URLs return `false` so callers proceed as if the target is remote.
+ */
+export function isLocalDevelopmentServerUrl(serverUrl: string): boolean {
   try {
-    const url = new URL(urlText);
-    return (
-      (url.protocol === "http:" || url.protocol === "https:") && isLoopbackHostname(url.hostname)
-    );
+    return isLocalDevelopmentHostname(new URL(serverUrl).hostname);
   } catch {
     return false;
   }

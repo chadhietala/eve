@@ -1,40 +1,15 @@
 import { getVercelOidcToken } from "#compiled/@vercel/oidc/index.js";
 import { EVE_ROUTE_PREFIX } from "#protocol/routes.js";
+import {
+  isLocalDevelopmentHostname,
+  isLocalDevelopmentServerUrl,
+} from "#shared/network-address.js";
 
 const EVE_ROUTE_PREFIX_WITH_SEPARATOR = `${EVE_ROUTE_PREFIX}/`;
 
-/**
- * Hostnames the dev client treats as "local" for auth purposes. When the
- * target server is one of these, the dev client skips the Vercel OIDC
- * bearer entirely — the framework's default channel auth chain is
- * `[localDev(), vercelOidc()]`, and `localDev()` accepts off Vercel
- * infrastructure, so attaching a bearer would be wasted work and noise
- * in the request inspector.
- */
-const LOCAL_HOSTNAMES: ReadonlySet<string> = new Set([
-  "localhost",
-  "127.0.0.1",
-  "0.0.0.0",
-  "::1",
-  "[::1]",
-]);
-
-function isLocalEveServerUrl(url: URL): boolean {
-  return LOCAL_HOSTNAMES.has(url.hostname);
-}
-
-/**
- * Returns whether `serverUrl` targets one of the recognized local
- * development hostnames. Invalid URLs return `false` so callers can
- * always proceed as if the target is remote.
- */
-export function isLocalDevelopmentServerUrl(serverUrl: string): boolean {
-  try {
-    return isLocalEveServerUrl(new URL(serverUrl));
-  } catch {
-    return false;
-  }
-}
+// Re-exported from its canonical home so the dev client (credential gate) and
+// the dev-server reuse gate share one definition of "local".
+export { isLocalDevelopmentServerUrl };
 
 /**
  * Resolves a Vercel OIDC token for the development client.
@@ -186,7 +161,7 @@ function shouldResolveEveRouteOidcToken(resourceUrl: URL): boolean {
   // and `localDev()` accepts off Vercel infrastructure — so attaching a
   // bearer or bypass token to a localhost request is wasted work and
   // noise in the request inspector.
-  if (isLocalEveServerUrl(resourceUrl)) {
+  if (isLocalDevelopmentHostname(resourceUrl.hostname)) {
     return false;
   }
 
