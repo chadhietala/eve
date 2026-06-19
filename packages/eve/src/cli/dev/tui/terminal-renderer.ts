@@ -92,7 +92,9 @@ import { reduceSetupSelectInput, setupSelectionIntent } from "./setup-selection-
 import {
   formatAssistantResponseStats,
   formatTokenFlow,
+  isIncompletePaste,
   nextKey,
+  stripPasteStart,
   stripPromptControlCharacters,
   takeUntil,
   type TerminalKey,
@@ -220,6 +222,10 @@ const tickMs = 90;
 // How long to wait on a lone `ESC` before treating it as the Escape key, so a
 // split arrow sequence (`ESC` then `[A`) has time to reassemble first.
 const escFlushMs = 30;
+// How long to wait, with no further input, before abandoning a bracketed paste
+// whose closing marker never arrived. Generous because the timer resets on every
+// read, so an in-flight paste keeps it alive; it only fires once input goes quiet.
+const incompletePasteFlushMs = 1_000;
 // How long the transient Ctrl+L log-mode hint stays in the status line after
 // the last cycle before it clears itself.
 const logLevelHintMs = 5_000;
@@ -457,8 +463,8 @@ export class TerminalRenderer implements AgentTUIRenderer {
       };
 
       this.#consumeKey = (key) => {
-        // The prompt is the one multi-line input: it keeps pasted newlines and
-        // honors Shift+Enter. The setup-panel inputs stay single-line (default).
+        // Chat keeps pasted newlines and honors Shift+Enter. Setup-panel inputs
+        // stay single-line; freeform questions opt in separately below.
         const edited = applyLineEditorKey(editor, key, { multiline: true });
         if (edited !== undefined) {
           apply(edited);
@@ -815,7 +821,7 @@ export class TerminalRenderer implements AgentTUIRenderer {
           return;
         }
 
-        const edited = applyLineEditorKey(editor, key);
+        const edited = applyLineEditorKey(editor, key, { multiline: true });
         if (edited !== undefined) {
           editor = edited;
           this.#showCaret();
@@ -824,6 +830,16 @@ export class TerminalRenderer implements AgentTUIRenderer {
         }
 
         switch (key.type) {
+          case "up":
+          case "down": {
+            const moved = movePromptLine(editor, key.type);
+            if (moved !== undefined) {
+              editor = moved;
+              this.#showCaret();
+              repaintStatus();
+            }
+            break;
+          }
           case "enter": {
             const resolvedText = resolveQuestionText(editor.text, question);
             if (resolvedText === undefined) break;
@@ -1760,7 +1776,18 @@ export class TerminalRenderer implements AgentTUIRenderer {
     this.#clearKeyFlush();
     this.#keyBuffer += this.#inputDecoder.write(chunk);
     this.#drainKeys();
+    this.#armKeyFlush();
+  };
 
+  /**
+   * Arms a one-shot timer for an escape sequence that {@link nextKey} can't yet
+   * resolve, so the decoder never blocks all further input waiting on bytes that
+   * will not come. Re-armed on every read, so a sequence still in flight stays
+   * alive; it only fires once input goes quiet.
+   */
+  #armKeyFlush() {
+    // A lone trailing ESC may begin an arrow/function key; hold it briefly, then
+    // surface it as a bare Escape.
     if (this.#keyBuffer === "\x1b") {
       this.#keyFlushTimer = setTimeout(() => {
         if (this.#keyBuffer !== "\x1b") return;
@@ -1768,8 +1795,21 @@ export class TerminalRenderer implements AgentTUIRenderer {
         this.#consumeKey?.({ type: "escape" });
       }, escFlushMs);
       this.#keyFlushTimer.unref?.();
+      return;
     }
-  };
+    // A bracketed paste whose closing marker never arrives would otherwise wedge
+    // input forever. Abandon the framing and re-decode the buffer as ordinary
+    // input so the session recovers.
+    if (isIncompletePaste(this.#keyBuffer)) {
+      const stuck = this.#keyBuffer;
+      this.#keyFlushTimer = setTimeout(() => {
+        if (this.#keyBuffer !== stuck) return;
+        this.#keyBuffer = stripPasteStart(this.#keyBuffer);
+        this.#drainKeys();
+      }, incompletePasteFlushMs);
+      this.#keyFlushTimer.unref?.();
+    }
+  }
 
   #drainKeys() {
     while (this.#keyBuffer.length > 0) {

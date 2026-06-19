@@ -72,6 +72,21 @@ export function sanitizePastedText(text: string): string {
   return printable;
 }
 
+/**
+ * True when `buffer` is a bracketed paste whose closing marker hasn't arrived.
+ * {@link nextKey} reports such a buffer as `incomplete` indefinitely, so the
+ * caller needs this to recover if the end marker never comes (a process that
+ * emits a bare start marker and dies, a malformed terminal).
+ */
+export function isIncompletePaste(buffer: string): boolean {
+  return buffer.startsWith(PASTE_START) && !buffer.includes(PASTE_END, PASTE_START.length);
+}
+
+/** Drops a leading bracketed-paste start marker, leaving the payload as plain input. */
+export function stripPasteStart(buffer: string): string {
+  return buffer.startsWith(PASTE_START) ? buffer.slice(PASTE_START.length) : buffer;
+}
+
 /** Removes C0 control characters and DEL from text intended for the prompt. */
 export function stripPromptControlCharacters(text: string): string {
   let printable = "";

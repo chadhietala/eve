@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   formatCompactTokenCount,
   formatTokenFlow,
+  isIncompletePaste,
   nextKey,
   parseKey,
   sanitizePastedText,
+  stripPasteStart,
   stripPromptControlCharacters,
   takeUntil,
 } from "./stream-format.js";
@@ -26,6 +28,19 @@ describe("sanitizePastedText", () => {
     // 0x9b is single-byte CSI, 0x9d is OSC: leaving them in would let a paste
     // smuggle in an escape sequence.
     expect(sanitizePastedText("abc")).toBe("abc");
+  });
+});
+
+describe("incomplete bracketed paste", () => {
+  it("flags a paste whose end marker hasn't arrived, and clears once it has", () => {
+    expect(isIncompletePaste("\x1b[200~partial")).toBe(true);
+    expect(isIncompletePaste("\x1b[200~done\x1b[201~")).toBe(false);
+    expect(isIncompletePaste("plain text")).toBe(false);
+  });
+
+  it("strips the start marker so a stuck paste can re-decode as plain input", () => {
+    expect(stripPasteStart("\x1b[200~oops")).toBe("oops");
+    expect(stripPasteStart("no marker")).toBe("no marker");
   });
 });
 

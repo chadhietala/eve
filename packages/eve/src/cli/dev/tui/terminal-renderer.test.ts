@@ -315,10 +315,29 @@ describe("TerminalRenderer (inline scrollback)", () => {
     const snapshot = screen.snapshot();
     expect(snapshot).toContain("hello"); // text stays contiguous, not split by a caret
     expect(snapshot).not.toContain("▏"); // no inserted bar-caret cell
+    // The block caret is reverse-video (SGR 7) over the grapheme under the
+    // cursor; snapshot() strips SGR, so assert it on the raw output.
+    expect(screen.rawOutput()).toContain("\x1b[7m");
 
     input.enter();
     await prompt;
     renderer.shutdown();
+  });
+
+  it("recovers from an unterminated bracketed paste instead of wedging input", async () => {
+    vi.useFakeTimers();
+    try {
+      const { input, renderer } = makeRenderer();
+      const prompt = renderer.readPrompt();
+      input.send("\x1b[200~stuck"); // paste start, closing marker never arrives
+      vi.advanceTimersByTime(1_100); // past the incomplete-paste flush
+      input.type("X"); // input still works rather than being wedged
+      input.enter();
+      expect(await prompt).toBe("stuckX");
+      renderer.shutdown();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("inserts a newline on Shift+Enter and submits the whole multi-line buffer", async () => {
@@ -698,7 +717,7 @@ describe("TerminalRenderer (inline scrollback)", () => {
     renderer.shutdown();
   });
 
-  it("accepts bracketed paste in freeform question input", async () => {
+  it("preserves bracketed multi-line paste in freeform question input", async () => {
     const { input, renderer } = makeRenderer();
 
     const answer = renderer.readInputQuestion({
@@ -711,7 +730,26 @@ describe("TerminalRenderer (inline scrollback)", () => {
     input.send("\x1b[200~New\nYork\x1b[201~");
     input.enter();
 
-    await expect(answer).resolves.toEqual({ text: "New York" });
+    await expect(answer).resolves.toEqual({ text: "New\nYork" });
+    renderer.shutdown();
+  });
+
+  it("edits freeform question input across lines", async () => {
+    const { input, renderer } = makeRenderer();
+
+    const answer = renderer.readInputQuestion({
+      requestId: "q1",
+      prompt: "What should I know?",
+      display: "text",
+    });
+    input.type("first");
+    input.send("\x1b[27;2;13~");
+    input.type("second");
+    input.up();
+    input.type("!");
+    input.enter();
+
+    await expect(answer).resolves.toEqual({ text: "first!\nsecond" });
     renderer.shutdown();
   });
 
