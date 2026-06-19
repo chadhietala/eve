@@ -125,6 +125,7 @@ export function deleteWord(state: LineState): LineState {
 }
 
 function logicalLineStart(text: string, cursor: number): number {
+  if (cursor === 0) return 0;
   return text.lastIndexOf("\n", cursor - 1) + 1;
 }
 

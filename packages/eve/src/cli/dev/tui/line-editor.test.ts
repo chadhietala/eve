@@ -87,6 +87,7 @@ describe("line editing", () => {
   it("jumps home and end", () => {
     expect(moveHome({ text: "abc", cursor: 2 })).toEqual({ text: "abc", cursor: 0 });
     expect(moveEnd({ text: "abc", cursor: 0 })).toEqual({ text: "abc", cursor: 3 });
+    expect(moveHome({ text: "\nsecond", cursor: 0 })).toEqual({ text: "\nsecond", cursor: 0 });
     expect(moveHome({ text: "one\ntwo", cursor: 6 })).toEqual({ text: "one\ntwo", cursor: 4 });
     expect(moveEnd({ text: "one\ntwo", cursor: 1 })).toEqual({ text: "one\ntwo", cursor: 3 });
   });
