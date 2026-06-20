@@ -1,6 +1,6 @@
 import { FsMemoryStore } from "#runtime/memory/fs-store.js";
 import type { MemoryConfig } from "#runtime/memory/keys.js";
-import { resolveWorkingNamespace } from "#runtime/memory/namespace.js";
+import { resolveMemoryNamespace, resolveSessionsNamespace } from "#runtime/memory/namespace.js";
 import type { MemoryStore } from "#runtime/memory/store.js";
 import type { MemoryDefinition } from "#public/definitions/memory.js";
 
@@ -18,12 +18,8 @@ export interface BuildMemoryConfigInput {
   readonly root: string;
   /** Orientation text injected as a system pointer (memory.md body / memory.ts return). */
   readonly orientation?: string;
-  /** Resolved agent id; partitions every memory namespace. */
+  /** Resolved agent id; partitions every memory namespace (the agent-scoped key). */
   readonly agentId: string;
-  /** Channel continuation token, when the turn has one. */
-  readonly continuationToken?: string;
-  /** Stable root session id; the working-scope fallback partition. */
-  readonly rootSessionId: string;
   /**
    * Live store resolved from a `defineMemory` export. When omitted the
    * framework default {@link FsMemoryStore} is used.
@@ -39,30 +35,30 @@ export interface BuildMemoryConfigInput {
 /**
  * Builds the per-turn {@link MemoryConfig} from a compiled memory definition.
  *
- * Computes the working namespace via {@link resolveWorkingNamespace} (thread-
- * scoped on a continuation token, session-scoped otherwise), instantiates the
- * default {@link FsMemoryStore} unless a live store was supplied, and passes
- * through the orientation and any author handlers. The result is a transient value
+ * Resolves the mounted, agent-scoped persistent namespace via
+ * {@link resolveMemoryNamespace} and the off-mount raw-sessions namespace via
+ * {@link resolveSessionsNamespace}, instantiates the default
+ * {@link FsMemoryStore} unless a live store was supplied, and passes through the
+ * orientation and any author handlers. The result is a transient value
  * re-seeded each step under {@link MemoryConfigKey} — never serialized — so a
  * live store instance is safe to hold here.
  */
 export function buildMemoryConfig(input: BuildMemoryConfigInput): MemoryConfig {
-  const namespace = resolveWorkingNamespace({
-    agentId: input.agentId,
-    continuationToken: input.continuationToken,
-    rootSessionId: input.rootSessionId,
-  });
+  const namespace = resolveMemoryNamespace({ agentId: input.agentId });
+  const sessionsNamespace = resolveSessionsNamespace({ agentId: input.agentId });
 
   const config: {
     root: string;
     store: MemoryStore;
     namespace: typeof namespace;
+    sessionsNamespace: typeof sessionsNamespace;
     orientation?: string;
     handlers?: BuildMemoryConfigInput["handlers"];
   } = {
     root: input.root,
     store: input.store ?? new FsMemoryStore(),
     namespace,
+    sessionsNamespace,
   };
 
   if (input.orientation !== undefined) {

@@ -8,14 +8,25 @@ import { type MemoryConfig, MemoryConfigKey } from "#runtime/memory/keys.js";
 import { InMemoryMemoryStore } from "#runtime/memory/store.js";
 import type { MemoryNamespace } from "#runtime/memory/types.js";
 
-const NAMESPACE: MemoryNamespace = {
+const MOUNTED_NAMESPACE: MemoryNamespace = {
   agentId: "agent-1",
-  scopeId: "scope-1",
+  scopeId: "agent-1",
   scopeType: "working",
 };
 
+const SESSIONS_NAMESPACE: MemoryNamespace = {
+  agentId: "agent-1",
+  scopeId: "agent-1",
+  scopeType: "sessions",
+};
+
 function makeConfig(store: InMemoryMemoryStore): MemoryConfig {
-  return { namespace: NAMESPACE, root: "/memory", store };
+  return {
+    namespace: MOUNTED_NAMESPACE,
+    sessionsNamespace: SESSIONS_NAMESPACE,
+    root: "/memory",
+    store,
+  };
 }
 
 function makeSession(history: ModelMessage[]): HarnessSession {
@@ -44,15 +55,20 @@ function decode(value: Uint8Array | null): string | null {
 }
 
 describe("maybeDumpSession", () => {
-  it("writes sessions/<id>/transcript.jsonl when a MemoryConfig is present", async () => {
+  it("writes the transcript to the off-mount sessions namespace, not the mounted one", async () => {
     const store = new InMemoryMemoryStore();
     const session = makeSession([{ role: "user", content: "hi" }]);
 
     await withMemory(makeConfig(store), (ctx) => maybeDumpSession(ctx, session));
 
-    const stored = decode(await store.read(NAMESPACE, "sessions/session-42/transcript.jsonl"));
+    const stored = decode(
+      await store.read(SESSIONS_NAMESPACE, "sessions/session-42/transcript.jsonl"),
+    );
     expect(stored).not.toBeNull();
     expect(JSON.parse(stored!)).toEqual({ role: "user", content: "hi" });
+
+    // The mounted memory area (what /memory serves) must stay untouched.
+    expect(await store.list(MOUNTED_NAMESPACE, "")).toEqual([]);
   });
 
   it("is a no-op when no MemoryConfig is present", async () => {
@@ -61,6 +77,6 @@ describe("maybeDumpSession", () => {
 
     await withMemory(undefined, (ctx) => maybeDumpSession(ctx, session));
 
-    expect(await store.list(NAMESPACE, "")).toEqual([]);
+    expect(await store.list(SESSIONS_NAMESPACE, "")).toEqual([]);
   });
 });

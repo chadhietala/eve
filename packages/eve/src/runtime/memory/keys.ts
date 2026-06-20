@@ -27,10 +27,19 @@ export interface MemoryConfig {
   readonly store: MemoryStore;
 
   /**
-   * The namespace this turn's memory is partitioned under. For slice 1 this is
-   * always a `working` namespace keyed by the channel continuation token.
+   * The namespace the mounted memory is partitioned under: the agent-scoped,
+   * persistent area served at {@link MemoryConfig.root} by the file-tool
+   * redirect. This is the curated memory the agent reads and writes.
    */
   readonly namespace: MemoryNamespace;
+
+  /**
+   * The off-mount raw-sessions namespace: the agent-scoped, immutable area
+   * where per-session transcript dumps land. It is the source material a
+   * consolidation reads and is deliberately *not* reachable through the mount
+   * (a distinct `scopeType` from {@link MemoryConfig.namespace}).
+   */
+  readonly sessionsNamespace: MemoryNamespace;
 
   /**
    * Orientation text (the `memory.md` body or `memory.ts` return) injected as a

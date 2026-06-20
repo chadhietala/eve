@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ContextContainer, contextStorage } from "#context/container.js";
 import { type MemoryConfig, MemoryConfigKey } from "#runtime/memory/keys.js";
 import { InMemoryMemoryStore } from "#runtime/memory/store.js";
-import type { MemoryNamespace } from "#runtime/memory/types.js";
+import { resolveMemoryNamespace, resolveSessionsNamespace } from "#runtime/memory/namespace.js";
 import {
   memoryGrep,
   memoryList,
@@ -12,15 +12,13 @@ import {
   shouldRedirectToMemory,
 } from "#execution/sandbox/memory-redirect.js";
 
-const NAMESPACE: MemoryNamespace = {
-  agentId: "agent-1",
-  scopeId: "scope-1",
-  scopeType: "working",
-};
+const NAMESPACE = resolveMemoryNamespace({ agentId: "agent-1" });
+const SESSIONS_NAMESPACE = resolveSessionsNamespace({ agentId: "agent-1" });
 
 function makeConfig(overrides: Partial<MemoryConfig> = {}): MemoryConfig {
   return {
     namespace: NAMESPACE,
+    sessionsNamespace: SESSIONS_NAMESPACE,
     root: "/memory",
     store: new InMemoryMemoryStore(),
     ...overrides,

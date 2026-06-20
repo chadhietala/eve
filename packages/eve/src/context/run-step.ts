@@ -44,7 +44,7 @@ export async function withContextScope<T>(
   // MemoryConfigKey is codec-less and transient — rebuild it from the
   // compiled memory definition on every step rather than carrying it across
   // step boundaries.
-  await seedMemoryConfig(ctx, session);
+  await seedMemoryConfig(ctx);
 
   for (const provider of frameworkProviders) {
     const result = await provider.create(ctx, session);

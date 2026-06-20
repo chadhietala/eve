@@ -9,7 +9,7 @@ import { executeReadFileOnSandbox } from "#execution/sandbox/read-file-tool.js";
 import { executeWriteFileOnSandbox } from "#execution/sandbox/write-file-tool.js";
 import { FsMemoryStore } from "#runtime/memory/fs-store.js";
 import { type MemoryConfig, MemoryConfigKey } from "#runtime/memory/keys.js";
-import type { MemoryNamespace } from "#runtime/memory/types.js";
+import { resolveMemoryNamespace, resolveSessionsNamespace } from "#runtime/memory/namespace.js";
 
 /**
  * End-to-end proof of slice 1: a write through the real `write_file` tool to a
@@ -21,11 +21,10 @@ import type { MemoryNamespace } from "#runtime/memory/types.js";
  * tools redirected to the memory store and never touched the sandbox.
  */
 
-const NAMESPACE: MemoryNamespace = {
-  agentId: "agent-1",
-  scopeId: "slack:C1:T1",
-  scopeType: "working",
-};
+// Agent-scoped persistent mount: shared across sessions/threads of the agent,
+// so a file written in one turn survives into a later one.
+const NAMESPACE = resolveMemoryNamespace({ agentId: "agent-1" });
+const SESSIONS_NAMESPACE = resolveSessionsNamespace({ agentId: "agent-1" });
 
 // A sandbox that fails loudly if any method is called — for a /memory path the
 // tools must redirect to the store and leave the sandbox untouched.
@@ -41,7 +40,7 @@ const sandboxNeverTouched = new Proxy({} as Parameters<typeof executeReadFileOnS
 });
 
 function configFor(store: MemoryConfig["store"]): MemoryConfig {
-  return { namespace: NAMESPACE, root: "/memory", store };
+  return { namespace: NAMESPACE, sessionsNamespace: SESSIONS_NAMESPACE, root: "/memory", store };
 }
 
 async function inTurn<T>(config: MemoryConfig, fn: () => Promise<T>): Promise<T> {

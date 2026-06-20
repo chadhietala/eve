@@ -12,13 +12,16 @@
  * A storage namespace: the partition a memory read/write resolves against.
  *
  * `scopeType` selects the layer; `scopeId` is the layer-specific partition
- * key (the channel continuation token for working memory, the principal key
- * for episodic, the agent node id for long-term, an org/deployment id for
- * swarm). `agentId` scopes every namespace to the resolved agent so two
+ * key (the agent id for working memory — the agent-scoped, persistent area
+ * mounted at `/memory`; the principal key for episodic, the agent node id for
+ * long-term, an org/deployment id for swarm). `"sessions"` is an internal
+ * partition holding the raw, immutable per-session transcript dumps off the
+ * mount — the source material a consolidation reads, never served through
+ * `/memory`. `agentId` scopes every namespace to the resolved agent so two
  * agents never share a partition.
  */
 export interface MemoryNamespace {
-  readonly scopeType: "working" | "episodic" | "long-term" | "swarm";
+  readonly scopeType: "working" | "episodic" | "long-term" | "swarm" | "sessions";
   readonly scopeId: string;
   readonly agentId: string;
 }

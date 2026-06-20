@@ -1,4 +1,3 @@
-import type { HarnessSession } from "#harness/types.js";
 import type { ContextContainer } from "#context/container.js";
 import { expectObjectRecord } from "#internal/authored-module.js";
 import type { MemoryDefinition } from "#public/definitions/memory.js";
@@ -86,16 +85,12 @@ export async function resolveMemoryModule(
  * Runs on every step (the {@link MemoryConfigKey} is codec-less and transient,
  * so it must be rebuilt each step rather than carried across step boundaries).
  * Reads the resolved memory off the active {@link BundleKey} bundle, derives the
- * working namespace from the session's continuation token / root session id /
- * agent id, and — for a module-backed (`memory.{ts,...}`) definition — resolves
- * the live store and escape-hatch handlers from the module map. When the agent
- * has no memory
+ * agent-scoped mounted and raw-sessions namespaces from the agent id, and — for
+ * a module-backed (`memory.{ts,...}`) definition — resolves the live store and
+ * escape-hatch handlers from the module map. When the agent has no memory
  * layer, nothing is seeded so non-memory agents are unaffected.
  */
-export async function seedMemoryConfig(
-  ctx: ContextContainer,
-  session: HarnessSession,
-): Promise<void> {
+export async function seedMemoryConfig(ctx: ContextContainer): Promise<void> {
   const bundle = ctx.get(BundleKey);
   if (bundle === undefined) {
     return;
@@ -108,15 +103,10 @@ export async function seedMemoryConfig(
   const input: Mutable<BuildMemoryConfigInput> = {
     root: memory.root,
     agentId: bundle.resolvedAgent.config.name,
-    rootSessionId: session.rootSessionId ?? session.sessionId,
   };
 
   if (memory.orientation !== undefined) {
     input.orientation = memory.orientation;
-  }
-
-  if (session.continuationToken.length > 0) {
-    input.continuationToken = session.continuationToken;
   }
 
   if (memory.sourceKind === "module") {

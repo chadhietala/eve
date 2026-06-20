@@ -1,31 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { resolveWorkingNamespace } from "#runtime/memory/namespace.js";
+import { resolveMemoryNamespace, resolveSessionsNamespace } from "#runtime/memory/namespace.js";
 
-describe("resolveWorkingNamespace", () => {
-  it("uses the continuation token as scopeId when present", () => {
-    const ns = resolveWorkingNamespace({
-      agentId: "agent-1",
-      continuationToken: "slack:c1:t1",
-      rootSessionId: "session-1",
-    });
+describe("resolveMemoryNamespace", () => {
+  it("is agent-scoped: scopeId is the agent id under the working scope", () => {
+    const ns = resolveMemoryNamespace({ agentId: "agent-1" });
     expect(ns).toEqual({
       agentId: "agent-1",
-      scopeId: "slack:c1:t1",
+      scopeId: "agent-1",
       scopeType: "working",
     });
   });
+});
 
-  it("falls back to the root session id when no continuation token", () => {
-    const ns = resolveWorkingNamespace({ agentId: "agent-1", rootSessionId: "session-1" });
+describe("resolveSessionsNamespace", () => {
+  it("is agent-scoped under the off-mount sessions scope", () => {
+    const ns = resolveSessionsNamespace({ agentId: "agent-1" });
     expect(ns).toEqual({
       agentId: "agent-1",
-      scopeId: "session-1",
-      scopeType: "working",
+      scopeId: "agent-1",
+      scopeType: "sessions",
     });
   });
+});
 
-  it("always resolves to the working scope type", () => {
-    const ns = resolveWorkingNamespace({ agentId: "agent-1", rootSessionId: "session-1" });
-    expect(ns.scopeType).toBe("working");
+describe("memory vs sessions namespaces", () => {
+  it("differ in scopeType for the same agent so dumps never collide with mounted memory", () => {
+    const memory = resolveMemoryNamespace({ agentId: "agent-1" });
+    const sessions = resolveSessionsNamespace({ agentId: "agent-1" });
+    expect(memory.scopeType).not.toBe(sessions.scopeType);
+    expect(memory.agentId).toBe(sessions.agentId);
   });
 });

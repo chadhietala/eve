@@ -13,6 +13,10 @@ import { buildWriteKey } from "#runtime/memory/write-key.js";
  * its turn coordinate, so re-dumping within a session only writes when the
  * transcript changed — each successful step persists the latest transcript
  * while replays and unchanged steps are deduped by the store.
+ *
+ * The transcript lands in the off-mount `sessionsNamespace` (the raw, immutable
+ * source-of-truth area), never in the mounted memory namespace the agent reads
+ * through `/memory`.
  */
 export async function maybeDumpSession(
   ctx: ContextContainer,
@@ -24,13 +28,13 @@ export async function maybeDumpSession(
   }
 
   const writeKey = buildWriteKey({
-    namespace: config.namespace,
+    namespace: config.sessionsNamespace,
     turnId: session.sessionId,
     seq: 0,
     content: formatTranscriptJsonl(session.history),
   });
 
-  await dumpSession(config.store, config.namespace, {
+  await dumpSession(config.store, config.sessionsNamespace, {
     sessionId: session.sessionId,
     messages: session.history,
     writeKey,
