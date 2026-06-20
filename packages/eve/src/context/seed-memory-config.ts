@@ -146,8 +146,20 @@ export async function seedMemoryConfig(ctx: ContextContainer): Promise<void> {
     input.dream = dream;
   }
 
-  ctx.set(MemoryConfigKey, buildMemoryConfig(input));
+  const config = buildMemoryConfig(input);
+
+  // Recall: surface the consolidated memory index in the system prompt from
+  // turn one, so the agent doesn't have to discover it. The rest of memory
+  // stays grep/read-on-demand through the file tools.
+  const index = await config.store.read(config.namespace, MEMORY_INDEX_PATH);
+  ctx.set(
+    MemoryConfigKey,
+    index === null ? config : { ...config, memoryIndex: new TextDecoder().decode(index) },
+  );
 }
+
+/** Path of the consolidated memory index within the mounted memory namespace. */
+const MEMORY_INDEX_PATH = "MEMORY.md";
 
 function buildDreamConfig(
   staticDream: ResolvedMemory["dream"],

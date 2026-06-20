@@ -135,13 +135,15 @@ export async function runDream(
     return;
   }
 
-  const buildInput: BuildDreamContextInput = {
+  const buildInput: Mutable<BuildDreamContextInput> = {
     store: config.store,
     memoryNamespace: config.namespace,
     sessionsNamespace: config.sessionsNamespace,
     model: input.model,
-    ...(config.dream.instructions !== undefined ? { instructions: config.dream.instructions } : {}),
   };
+  if (config.dream.instructions !== undefined) {
+    buildInput.instructions = config.dream.instructions;
+  }
 
   const ctx = await buildDreamContext(buildInput);
   const run = config.dream.run ?? defaultDream;
@@ -235,3 +237,5 @@ function formatSessionsSection(sessions: DreamContext["sessions"]): string {
   );
   return ["Recent session transcripts:", ...blocks].join("\n\n");
 }
+
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };

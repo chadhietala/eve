@@ -31,5 +31,11 @@ export function buildMemoryOrientationMessages(ctx: {
     lines.push(config.orientation.trim());
   }
 
+  // The consolidated memory index (`MEMORY.md`, the dream's output) is injected
+  // so the agent's curated memory is in context from turn one.
+  if (config.memoryIndex !== undefined && config.memoryIndex.trim().length > 0) {
+    lines.push(`Your consolidated memory (\`MEMORY.md\`):\n\n${config.memoryIndex.trim()}`);
+  }
+
   return [{ role: "system", content: lines.join("\n\n") }];
 }

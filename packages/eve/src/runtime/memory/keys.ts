@@ -49,6 +49,14 @@ export interface MemoryConfig {
   readonly orientation?: string;
 
   /**
+   * The consolidated memory index (`MEMORY.md`) read from the mounted namespace
+   * at seed time, injected into the system prompt so the agent's curated memory
+   * is in context from turn one (it can still grep/read the rest on demand).
+   * Absent until a consolidation has written one.
+   */
+  readonly memoryIndex?: string;
+
+  /**
    * Author-supplied escape hatches overriding the framework's default IO. When
    * absent, the framework drives the default store-backed behavior (convention
    * over configuration).
