@@ -2,7 +2,7 @@ import type { AgentDefinition, AgentBuildDefinition } from "#public/definitions/
 import type { ScheduleDefinition, ScheduleRunHandler } from "#public/definitions/schedule.js";
 import type { SkillDefinition, SkillFileContent } from "#public/definitions/skill.js";
 import type { InstructionsDefinition } from "#public/definitions/instructions.js";
-import type { MemoryDefinition } from "#public/definitions/memory.js";
+import type { DreamConfig, MemoryDefinition } from "#public/definitions/memory.js";
 import {
   expectBoolean,
   expectFunction,
@@ -220,8 +220,8 @@ export function normalizeMemoryDefinition(
   message: string,
 ): MemoryDefinition & { readonly orientation: string } {
   const record = expectObjectRecord(value, message);
-  expectOnlyKnownKeys(record, ["root", "orientation"], message);
-  const definition: { root?: string; orientation: string } = {
+  expectOnlyKnownKeys(record, ["root", "orientation", "dream"], message);
+  const definition: { root?: string; orientation: string; dream?: DreamConfig } = {
     orientation: expectString(record.orientation, message),
   };
 
@@ -229,7 +229,65 @@ export function normalizeMemoryDefinition(
     definition.root = expectString(record.root, message);
   }
 
+  if (record.dream !== undefined) {
+    definition.dream = normalizeMemoryDreamDefinition(record.dream, message);
+  }
+
   return definition;
+}
+
+/**
+ * Shallowly validates an authored memory `dream` config into the canonical
+ * internal shape. Only the static, serializable fields are checked here
+ * (`model`, `instructions`, `schedule`); the live `run` override is carried
+ * through untouched because it resolves from the module map at runtime, not
+ * from this data projection.
+ */
+function normalizeMemoryDreamDefinition(value: unknown, message: string): DreamConfig {
+  const record = expectObjectRecord(value, message);
+  expectOnlyKnownKeys(record, ["model", "instructions", "schedule", "run"], message);
+  const definition: Mutable<DreamConfig> = {};
+
+  if (record.model !== undefined) {
+    definition.model = expectString(record.model, message);
+  }
+
+  if (record.instructions !== undefined) {
+    definition.instructions = expectString(record.instructions, message);
+  }
+
+  if (record.schedule !== undefined) {
+    definition.schedule = normalizeMemoryDreamSchedule(record.schedule, message);
+  }
+
+  if (record.run !== undefined) {
+    definition.run = expectFunction(record.run, message) as DreamConfig["run"];
+  }
+
+  return definition;
+}
+
+function normalizeMemoryDreamSchedule(
+  value: unknown,
+  message: string,
+): NonNullable<DreamConfig["schedule"]> {
+  const record = expectObjectRecord(value, message);
+  expectOnlyKnownKeys(record, ["idleMs", "cron", "minSessions"], message);
+  const schedule: Mutable<NonNullable<DreamConfig["schedule"]>> = {};
+
+  if (record.idleMs !== undefined) {
+    schedule.idleMs = expectPositiveInteger(record.idleMs, message);
+  }
+
+  if (record.cron !== undefined) {
+    schedule.cron = expectString(record.cron, message);
+  }
+
+  if (record.minSessions !== undefined) {
+    schedule.minSessions = expectPositiveInteger(record.minSessions, message);
+  }
+
+  return schedule;
 }
 
 /**

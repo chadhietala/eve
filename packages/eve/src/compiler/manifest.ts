@@ -39,7 +39,7 @@ export const ROOT_COMPILED_AGENT_NODE_ID = "__root__";
 /**
  * Current compiled manifest schema version.
  */
-export const COMPILED_AGENT_MANIFEST_VERSION = 31;
+export const COMPILED_AGENT_MANIFEST_VERSION = 32;
 
 /**
  * Compiled channel entry preserved in the compiled manifest.
@@ -132,6 +132,12 @@ export type CompiledInstructions = z.infer<typeof compiledInstructionsSchema>;
  * tools and connections resolve their authored modules.
  */
 export type CompiledMemory = z.infer<typeof compiledMemorySchema>;
+
+/**
+ * Static, serializable projection of a memory `dream` (consolidation) config.
+ * See {@link compiledDreamSchema} for the field-level documentation.
+ */
+export type CompiledDream = z.infer<typeof compiledDreamSchema>;
 
 /**
  * Normalized authored skill preserved in the compiled manifest.
@@ -361,6 +367,31 @@ const compiledInstructionsSchema = z
   })
   .strict();
 
+/**
+ * Static, serializable projection of a memory `dream` (consolidation) config.
+ *
+ * Carries only the durable fields — `model`, `instructions`, `schedule`, and a
+ * `hasRun` flag recording whether the author supplied a `run` override. The
+ * live `run` function is never serialized; it resolves from the module map at
+ * runtime, with `hasRun` telling the runtime whether to look for it.
+ */
+const compiledDreamSchema = z
+  .object({
+    model: z.string().optional(),
+    instructions: z.string().optional(),
+    schedule: z
+      .object({
+        idleMs: z.number().int().positive().optional(),
+        cron: z.string().optional(),
+        minSessions: z.number().int().positive().optional(),
+      })
+      .strict()
+      .optional(),
+    /** Whether the author supplied a `run` override (`.ts` form only). */
+    hasRun: z.boolean(),
+  })
+  .strict();
+
 const compiledMemorySchema = z
   .object({
     name: z.string(),
@@ -380,6 +411,12 @@ const compiledMemorySchema = z
      * resolve from the module map at runtime.
      */
     handlerNames: z.array(z.enum(["onRead", "onWrite", "onList", "onGrep"])).readonly(),
+    /**
+     * Static memory consolidation ("dream") config. Present when the author
+     * declared a `dream`; the live `run` override resolves from the module map
+     * at runtime (see {@link compiledDreamSchema}).
+     */
+    dream: compiledDreamSchema.optional(),
     exportName: z.string().optional(),
     sourceId: z.string(),
     sourceKind: z.union([z.literal("markdown"), z.literal("module")]),

@@ -1,3 +1,5 @@
+import type { LanguageModel } from "ai";
+
 import type { ExactDefinition } from "#public/definitions/exact.js";
 import type { DynamicResolveContext } from "#shared/dynamic-tool-definition.js";
 import type { MemoryStore } from "#runtime/memory/store.js";
@@ -44,6 +46,99 @@ export interface MemoryGrepMatch {
 }
 
 /**
+ * The mounted `/memory` area as seen by a {@link DreamConfig.run} pipeline:
+ * the consolidation's *output*. Reads and writes resolve against the
+ * agent-scoped persistent memory namespace — never the raw-sessions area —
+ * so a dream can fold sessions into the curated memory without ever mutating
+ * its own source material.
+ */
+export interface DreamMemoryAccess {
+  /** Reads the memory file at `path`, or `null` when it does not exist. */
+  read(path: string): Promise<string | null>;
+  /** Writes `content` to the memory file at `path` (PUT semantics). */
+  write(path: string, content: string): Promise<void>;
+  /** Lists memory paths under `prefix`. */
+  list(prefix: string): Promise<readonly string[]>;
+}
+
+/**
+ * The context a memory consolidation ("dream") runs against.
+ *
+ * A dream reads the raw, immutable {@link DreamContext.sessions} transcripts
+ * plus the current {@link DreamContext.memory} area and synthesizes a
+ * consolidated memory back into `memory`. The sessions are the input and are
+ * never written; the mounted memory area is the only output.
+ */
+export interface DreamContext {
+  /**
+   * Free-text guidance steering what the synthesis keeps, merges, and drops.
+   * Comes from {@link DreamConfig.instructions}; absent when the author gave
+   * none.
+   */
+  readonly instructions?: string;
+
+  /** The resolved model the synthesis calls (the agent's model by default). */
+  readonly model: LanguageModel;
+
+  /**
+   * The raw, immutable per-session transcripts — the dream's input. Each entry
+   * is one session's full-fidelity JSONL dump keyed by its session id. Reading
+   * these never mutates them.
+   */
+  readonly sessions: readonly { readonly sessionId: string; readonly transcript: string }[];
+
+  /**
+   * Read/write access to the mounted `/memory` area — the dream's output. This
+   * is the only surface a dream writes to; the {@link DreamContext.sessions}
+   * area is read-only.
+   */
+  readonly memory: DreamMemoryAccess;
+}
+
+/**
+ * Configures the memory consolidation ("dream") pipeline that folds raw
+ * session transcripts into the agent's curated `/memory` area.
+ *
+ * Every field is optional. With no `run`, the framework's built-in default
+ * synthesis runs — a single guided model call that merges new sessions into
+ * the existing memory. Provide `run` to replace the pipeline wholesale (e.g.
+ * a knowledge-graph or RAG indexer). The dream is invoked on a trigger wired
+ * up in a later phase; this config only describes the logic, not when it fires.
+ */
+export interface DreamConfig {
+  /** Optional model id for synthesis; defaults to the agent's model. */
+  readonly model?: string;
+
+  /**
+   * Free-text guidance steering what the default synthesis keeps, merges, and
+   * drops. Passed through to {@link DreamContext.instructions}.
+   */
+  readonly instructions?: string;
+
+  /**
+   * When to consolidate. Consumed by the consolidation trigger (a later
+   * phase); carried here as static config so it compiles into the manifest.
+   */
+  readonly schedule?: {
+    /** Consolidate after the agent has been idle this many milliseconds. */
+    readonly idleMs?: number;
+    /** Consolidate on this cron expression. */
+    readonly cron?: string;
+    /** Only consolidate once at least this many new sessions have accrued. */
+    readonly minSessions?: number;
+  };
+
+  /**
+   * Full override of the consolidation pipeline. Receives the
+   * {@link DreamContext} and is responsible for synthesizing and writing the
+   * consolidated memory. When omitted, the built-in default synthesis runs.
+   * Live function — resolved from the `memory.{ts,...}` module at runtime, not
+   * serialized into the manifest.
+   */
+  readonly run?: (ctx: DreamContext) => void | Promise<void>;
+}
+
+/**
  * Public definition for an agent's memory layer authored in markdown or
  * TypeScript.
  *
@@ -83,6 +178,14 @@ export interface MemoryDefinition {
    * the agent how to use its memory layer.
    */
   readonly orientation?: string;
+
+  /**
+   * Memory consolidation ("dream") configuration. When present, the agent's
+   * raw session transcripts are periodically folded into this curated memory
+   * area by the built-in default synthesis or a {@link DreamConfig.run}
+   * override. Absent means no consolidation runs.
+   */
+  readonly dream?: DreamConfig;
 
   /**
    * Escape hatch overriding the default read of a memory path. Receives

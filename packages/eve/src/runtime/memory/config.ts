@@ -30,6 +30,13 @@ export interface BuildMemoryConfigInput {
    * omitted the framework drives default store-backed behavior.
    */
   readonly handlers?: Pick<MemoryDefinition, "onRead" | "onWrite" | "onList" | "onGrep">;
+
+  /**
+   * Memory consolidation ("dream") config: the static fields projected from the
+   * compiled manifest, optionally carrying the live `run` override resolved from
+   * a `defineMemory` export. Absent when the agent declares no `dream`.
+   */
+  readonly dream?: MemoryConfig["dream"];
 }
 
 /**
@@ -54,6 +61,7 @@ export function buildMemoryConfig(input: BuildMemoryConfigInput): MemoryConfig {
     sessionsNamespace: typeof sessionsNamespace;
     orientation?: string;
     handlers?: BuildMemoryConfigInput["handlers"];
+    dream?: MemoryConfig["dream"];
   } = {
     root: input.root,
     store: input.store ?? new FsMemoryStore(),
@@ -67,6 +75,10 @@ export function buildMemoryConfig(input: BuildMemoryConfigInput): MemoryConfig {
 
   if (input.handlers !== undefined) {
     config.handlers = input.handlers;
+  }
+
+  if (input.dream !== undefined) {
+    config.dream = input.dream;
   }
 
   return config;

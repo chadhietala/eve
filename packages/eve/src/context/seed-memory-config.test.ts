@@ -48,6 +48,29 @@ describe("resolveMemoryModule", () => {
 
     expect(resolved.store).toBeUndefined();
     expect(resolved.handlers).toBeUndefined();
+    expect(resolved.dreamRun).toBeUndefined();
+  });
+
+  it("threads the live dream.run override from a defineMemory export", async () => {
+    const run = async (): Promise<void> => undefined;
+    const moduleMap = buildModuleMap(SOURCE_ID, {
+      default: defineMemory({ dream: { instructions: "merge", run } }),
+    });
+
+    const resolved = await resolveMemoryModule(REF, moduleMap, undefined);
+
+    // The live function is threaded through verbatim — not a copy.
+    expect(resolved.dreamRun).toBe(run);
+  });
+
+  it("leaves dreamRun undefined when the dream declares no run", async () => {
+    const moduleMap = buildModuleMap(SOURCE_ID, {
+      default: defineMemory({ dream: { instructions: "merge" } }),
+    });
+
+    const resolved = await resolveMemoryModule(REF, moduleMap, undefined);
+
+    expect(resolved.dreamRun).toBeUndefined();
   });
 
   it("throws a typed error when the module source is missing from the map", async () => {

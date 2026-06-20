@@ -11,7 +11,7 @@
  */
 
 import { ContextKey } from "#context/key.js";
-import type { MemoryDefinition } from "#public/definitions/memory.js";
+import type { DreamContext, MemoryDefinition } from "#public/definitions/memory.js";
 import type { MemoryStore } from "#runtime/memory/store.js";
 import type { MemoryNamespace } from "#runtime/memory/types.js";
 
@@ -54,6 +54,31 @@ export interface MemoryConfig {
    * over configuration).
    */
   readonly handlers?: Pick<MemoryDefinition, "onRead" | "onWrite" | "onList" | "onGrep">;
+
+  /**
+   * Memory consolidation ("dream") configuration: the static fields the author
+   * declared plus, for a module-backed memory, the live `run` override resolved
+   * from the module map. Absent when the agent declares no `dream`. The dream
+   * reads {@link MemoryConfig.sessionsNamespace} and writes only
+   * {@link MemoryConfig.namespace}.
+   */
+  readonly dream?: {
+    /** Optional model id for synthesis; defaults to the agent's model. */
+    readonly model?: string;
+    /** Free-text guidance steering what the default synthesis keeps/merges/drops. */
+    readonly instructions?: string;
+    /** When to consolidate (consumed by the trigger, a later phase). */
+    readonly schedule?: {
+      readonly idleMs?: number;
+      readonly cron?: string;
+      readonly minSessions?: number;
+    };
+    /**
+     * Full override of the consolidation pipeline. Live function resolved from
+     * a `memory.{ts,...}` module — present only for module-backed memory.
+     */
+    readonly run?: (ctx: DreamContext) => void | Promise<void>;
+  };
 }
 
 /**

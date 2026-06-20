@@ -1,11 +1,15 @@
 import { stripLogicalPathExtension } from "#discover/filesystem.js";
 import type { MemorySourceRef } from "#discover/manifest.js";
-import type { CompiledMemory } from "#compiler/manifest.js";
+import type { CompiledDream, CompiledMemory } from "#compiler/manifest.js";
 import {
   loadModuleBackedDefinition,
   type ModuleBackedDefinitionLoadOptions,
 } from "#compiler/normalize-helpers.js";
-import { isBrandedMemoryDefinition, type MemoryDefinition } from "#public/definitions/memory.js";
+import {
+  isBrandedMemoryDefinition,
+  type DreamConfig,
+  type MemoryDefinition,
+} from "#public/definitions/memory.js";
 
 /** Default mount point for the memory filesystem view. */
 const DEFAULT_MEMORY_ROOT = "/memory";
@@ -70,9 +74,40 @@ function projectCompiledMemory(
     sourceKind: source.sourceKind,
   };
 
+  const withDream =
+    definition.dream === undefined
+      ? compiled
+      : { ...compiled, dream: projectCompiledDream(definition.dream) };
+
   if (definition.orientation !== undefined) {
-    return { ...compiled, orientation: definition.orientation };
+    return { ...withDream, orientation: definition.orientation };
+  }
+
+  return withDream;
+}
+
+/**
+ * Projects an authored {@link DreamConfig} into its static, serializable
+ * {@link CompiledDream} shape.
+ *
+ * Only the durable fields (`model`, `instructions`, `schedule`) are serialized;
+ * the live `run` override is collapsed to a `hasRun` flag because the function
+ * itself resolves from the module map at runtime, not from the manifest.
+ */
+function projectCompiledDream(dream: DreamConfig): CompiledDream {
+  const compiled: Mutable<CompiledDream> = { hasRun: dream.run !== undefined };
+
+  if (dream.model !== undefined) {
+    compiled.model = dream.model;
+  }
+  if (dream.instructions !== undefined) {
+    compiled.instructions = dream.instructions;
+  }
+  if (dream.schedule !== undefined) {
+    compiled.schedule = { ...dream.schedule };
   }
 
   return compiled;
 }
+
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };

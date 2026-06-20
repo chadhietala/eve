@@ -150,6 +150,7 @@ function createResolvedMemory(memory: CompiledMemory | undefined): ResolvedMemor
     handlerNames: ResolvedMemory["handlerNames"];
     sourceId: string;
     orientation?: string;
+    dream?: ResolvedMemory["dream"];
   } = {
     name: memory.name,
     logicalPath: memory.logicalPath,
@@ -161,6 +162,10 @@ function createResolvedMemory(memory: CompiledMemory | undefined): ResolvedMemor
 
   if (memory.orientation !== undefined) {
     base.orientation = memory.orientation;
+  }
+
+  if (memory.dream !== undefined) {
+    base.dream = memory.dream;
   }
 
   return memory.sourceKind === "markdown"

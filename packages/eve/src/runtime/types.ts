@@ -16,7 +16,7 @@ import type {
   ToolFilterDefinition,
 } from "#runtime/connections/types.js";
 import type { OpenAPISpecSource } from "#public/definitions/connections/openapi.js";
-import type { CompiledWorkspaceResourceRoot } from "#compiler/manifest.js";
+import type { CompiledDream, CompiledWorkspaceResourceRoot } from "#compiler/manifest.js";
 import type { WorkspaceRuntimeSpec } from "#runtime/workspace/types.js";
 import type { JsonObject } from "#shared/json.js";
 import type { Optional } from "#shared/optional.js";
@@ -56,10 +56,11 @@ export type ResolvedInstructions = Readonly<
 /**
  * Authored memory layer resolved from `memory.md` or `memory.{ts,...}`.
  *
- * Carries the durable projection — the mount `root` and optional orientation
- * text — plus presence flags for the author-supplied store and escape-hatch
- * handlers. The live store and handler functions resolved from the module map
- * are wired in by memory-config seeding at turn time; they are not held on the
+ * Carries the durable projection — the mount `root`, optional orientation
+ * text, and the static `dream` (consolidation) config — plus presence flags
+ * for the author-supplied store and escape-hatch handlers. The live store,
+ * handler functions, and `dream.run` override resolved from the module map are
+ * wired in by memory-config seeding at turn time; they are not held on the
  * resolved agent.
  */
 export type ResolvedMemory = Readonly<
@@ -69,6 +70,7 @@ export type ResolvedMemory = Readonly<
     orientation?: string;
     hasStore: boolean;
     handlerNames: readonly ("onRead" | "onWrite" | "onList" | "onGrep")[];
+    dream?: CompiledDream;
   } & (Omit<MarkdownSourceRef<undefined>, "definition"> | ModuleSourceRef)
 >;
 
