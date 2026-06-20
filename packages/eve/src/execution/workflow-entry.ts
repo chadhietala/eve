@@ -323,24 +323,21 @@ async function runDriverLoop(input: {
 
         case "park": {
           if (action.authorizationNames && action.authorizationNames.length > 0) {
-            const expected = action.authorizationNames.length;
-            const allPayloads: DeliverPayload[] = [];
-
-            while (allPayloads.length < expected) {
+            let authorizationDelivery: DeliverHookPayload | undefined;
+            while (authorizationDelivery === undefined) {
               const next = await authIterator.next();
-              if (next.done) break;
-              if (next.value.kind === "deliver") {
-                allPayloads.push(...next.value.payloads);
+              if (next.done) {
+                return { output: "" };
+              }
+              if (next.value.kind === "deliver" && next.value.payloads.length > 0) {
+                authorizationDelivery = next.value;
               }
             }
 
             action = await dispatchAndAwaitTurn({
               capabilities: input.capabilities,
               completionToken: nextTurnCompletionToken(),
-              delivery: {
-                kind: "deliver",
-                payloads: allPayloads,
-              },
+              delivery: authorizationDelivery,
               mode: input.mode,
               parentWritable: input.driverWritable,
               serializedContext: action.serializedContext,

@@ -9,6 +9,14 @@ import { build as buildNitro, createDevServer, prepare } from "nitro/builder";
 import type { Nitro } from "nitro/types";
 
 import { createApplicationNitro } from "#internal/nitro/host/create-application-nitro.js";
+import {
+  parseDevelopmentProcessId,
+  readActiveDevelopmentProcess,
+  readDevelopmentServerMetadata,
+  resolveDevelopmentProcessIdPath,
+  resolveDevelopmentServerMetadataPath,
+  writeDevelopmentServerMetadata,
+} from "#internal/nitro/host/development-server-metadata.js";
 import { createNitroArtifactsConfig } from "#internal/nitro/host/artifacts-config.js";
 import type { AuthoredSourceWatcherHandle } from "#internal/nitro/host/dev-authored-source-watcher.js";
 import { prepareApplicationHost } from "#internal/nitro/host/prepare-application-host.js";
@@ -33,25 +41,17 @@ import {
 } from "#internal/nitro/host/ports.js";
 import { detectPackageManager, type PackageManagerKind } from "#setup/package-manager.js";
 import { eveDevArguments } from "#setup/primitives/index.js";
+import {
+  LocalDevelopmentAuthServer,
+  type LocalDevelopmentAuthServerHandle,
+} from "#internal/local-development-auth.js";
 
 const MAX_ALLOWED_DEVELOPMENT_SERVER_PORT = 65_535;
 const WORKFLOW_LOCAL_BASE_URL_ENV = "WORKFLOW_LOCAL_BASE_URL";
 const PORT_ENV = "PORT";
-const DEVELOPMENT_PROCESS_ID_FILE = "dev-process.pid";
-const DEVELOPMENT_SERVER_METADATA_FILE = "dev-server.json";
 const DEFAULT_DEVELOPMENT_SERVER_HOST = "127.0.0.1";
 const IPV6_LOOPBACK_HOSTNAME = "[::1]";
 const DEVELOPMENT_SERVER_URL_PLACEHOLDER = "http://localhost:PORT";
-
-interface DevelopmentServerMetadata {
-  readonly processId: number;
-  readonly url: string;
-}
-
-interface ActiveDevelopmentProcess {
-  readonly processId: number;
-  readonly url?: string;
-}
 
 /**
  * Hostnames Nitro/srvx surface when listening on an IPv6 wildcard interface.
@@ -121,116 +121,12 @@ function readEnvironmentPort(): number | undefined {
   return parsed;
 }
 
-function resolveDevelopmentProcessIdPath(appRoot: string): string {
-  return join(appRoot, ".eve", DEVELOPMENT_PROCESS_ID_FILE);
-}
-
-function resolveDevelopmentServerMetadataPath(appRoot: string): string {
-  return join(appRoot, ".eve", DEVELOPMENT_SERVER_METADATA_FILE);
-}
-
-function parseProcessId(value: string): number | undefined {
-  const trimmed = value.trim();
-
-  if (!/^\d+$/.test(trimmed)) {
-    return undefined;
-  }
-
-  const processId = Number(trimmed);
-  return Number.isSafeInteger(processId) && processId > 0 ? processId : undefined;
-}
-
-function isProcessRunning(processId: number): boolean {
-  try {
-    process.kill(processId, 0);
-    return true;
-  } catch (error) {
-    return (
-      error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "EPERM"
-    );
-  }
-}
-
 function formatKillCommand(processId: number): string {
   if (process.platform === "win32") {
     return `taskkill /PID ${processId}`;
   }
 
   return `kill ${processId}`;
-}
-
-function parseDevelopmentServerMetadata(value: string): DevelopmentServerMetadata | undefined {
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    return undefined;
-  }
-
-  if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    !("pid" in parsed) ||
-    typeof parsed.pid !== "number" ||
-    !Number.isSafeInteger(parsed.pid) ||
-    parsed.pid <= 0 ||
-    !("url" in parsed) ||
-    typeof parsed.url !== "string"
-  ) {
-    return undefined;
-  }
-
-  const url = normalizeDevelopmentServerClientUrl(parsed.url);
-
-  try {
-    const parsedUrl = new URL(url);
-    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-      return undefined;
-    }
-  } catch {
-    return undefined;
-  }
-
-  return {
-    processId: parsed.pid,
-    url,
-  };
-}
-
-async function readDevelopmentServerMetadata(
-  appRoot: string,
-): Promise<DevelopmentServerMetadata | undefined> {
-  try {
-    return parseDevelopmentServerMetadata(
-      await readFile(resolveDevelopmentServerMetadataPath(appRoot), "utf8"),
-    );
-  } catch {
-    return undefined;
-  }
-}
-
-async function readActiveDevelopmentProcess(
-  appRoot: string,
-): Promise<ActiveDevelopmentProcess | undefined> {
-  let processId: number | undefined;
-
-  try {
-    processId = parseProcessId(await readFile(resolveDevelopmentProcessIdPath(appRoot), "utf8"));
-  } catch {
-    return undefined;
-  }
-
-  if (processId === undefined || !isProcessRunning(processId)) {
-    return undefined;
-  }
-
-  const metadata = await readDevelopmentServerMetadata(appRoot);
-
-  return {
-    processId,
-    url: metadata?.processId === processId ? metadata.url : undefined,
-  };
 }
 
 async function detectDevelopmentCommandPackageManager(
@@ -249,22 +145,6 @@ async function formatDevelopmentServerConnectCommand(
 ): Promise<string> {
   const packageManager = await detectDevelopmentCommandPackageManager(appRoot);
   return [packageManager, ...eveDevArguments(packageManager), serverUrl].join(" ");
-}
-
-async function writeDevelopmentServerMetadata(appRoot: string, serverUrl: string): Promise<void> {
-  await writeFile(
-    resolveDevelopmentServerMetadataPath(appRoot),
-    `${JSON.stringify(
-      {
-        pid: process.pid,
-        updatedAt: new Date().toISOString(),
-        url: normalizeDevelopmentServerClientUrl(serverUrl),
-      },
-      null,
-      2,
-    )}\n`,
-    "utf8",
-  );
 }
 
 async function writeDevelopmentProcessId(appRoot: string): Promise<() => Promise<void>> {
@@ -291,7 +171,7 @@ async function writeDevelopmentProcessId(appRoot: string): Promise<() => Promise
     let currentProcessId: number | undefined;
 
     try {
-      currentProcessId = parseProcessId(await readFile(processIdPath, "utf8"));
+      currentProcessId = parseDevelopmentProcessId(await readFile(processIdPath, "utf8"));
     } catch {
       return;
     }
@@ -479,6 +359,7 @@ export async function startDevelopmentServer(
   process.env[EVE_DEVELOPMENT_SANDBOX_RUN_ID_ENV] = developmentSandboxRunId;
   let nitro: Nitro | undefined;
   let devServer: NitroDevelopmentServer | undefined;
+  let localAuthServer: LocalDevelopmentAuthServerHandle | undefined;
   let restoreWorkflowLocalQueueEnvironment: (() => void) | undefined;
   let authoredSourceWatcher: AuthoredSourceWatcherHandle | undefined;
   let removeDevelopmentProcessId: (() => Promise<void>) | undefined;
@@ -486,6 +367,17 @@ export async function startDevelopmentServer(
   try {
     const preparedHost = await prepareApplicationHost(rootDir, { dev: true });
     removeDevelopmentProcessId = await writeDevelopmentProcessId(preparedHost.appRoot);
+    const localAuthServerResult = await LocalDevelopmentAuthServer.start(preparedHost.appRoot);
+    if (!localAuthServerResult.ok) {
+      const error = localAuthServerResult.error;
+      if (error.kind === "io" && error.cause instanceof Error) throw error.cause;
+      throw new Error(
+        error.kind === "already-active"
+          ? `Local development auth server ${error.serverInstanceId} is already active.`
+          : "Failed to start local development auth.",
+      );
+    }
+    localAuthServer = localAuthServerResult.value;
     pruneDevelopmentRuntimeArtifactsSnapshotsInBackground(preparedHost.appRoot);
     const compiledArtifactsSource = resolveNitroCompiledArtifactsSource(
       createNitroArtifactsConfig({
@@ -517,7 +409,11 @@ export async function startDevelopmentServer(
     }
 
     const serverUrl = normalizeDevelopmentServerClientUrl(server.url);
-    await writeDevelopmentServerMetadata(preparedHost.appRoot, serverUrl);
+    await writeDevelopmentServerMetadata({
+      appRoot: preparedHost.appRoot,
+      localAuth: localAuthServer.metadata,
+      serverUrl,
+    });
     restoreWorkflowLocalQueueEnvironment = installWorkflowLocalQueueEnvironment(serverUrl);
     await prepare(nitro);
     await buildNitro(nitro);
@@ -535,6 +431,7 @@ export async function startDevelopmentServer(
 
     const authoredSourceWatcherOnClose = authoredSourceWatcher;
     const devServerOnClose = devServer;
+    const localAuthServerOnClose = localAuthServer;
     const nitroOnClose = nitro;
     return {
       async close() {
@@ -549,11 +446,19 @@ export async function startDevelopmentServer(
           });
         } finally {
           clearInitializedDevelopmentSandboxBackendNames(developmentSandboxRunId);
-          await removeDevelopmentProcessId?.();
-          restoreWorkflowLocalQueueEnvironmentOnClose();
-          restoreDevelopmentSandboxRunId(previousDevelopmentSandboxRunId);
+          try {
+            await localAuthServerOnClose.dispose();
+          } finally {
+            try {
+              await removeDevelopmentProcessId?.();
+            } finally {
+              restoreWorkflowLocalQueueEnvironmentOnClose();
+              restoreDevelopmentSandboxRunId(previousDevelopmentSandboxRunId);
+            }
+          }
         }
       },
+      localAuth: localAuthServer.metadata,
       url: serverUrl,
     };
   } catch (error) {
@@ -561,6 +466,7 @@ export async function startDevelopmentServer(
     restoreWorkflowLocalQueueEnvironment?.();
     await devServer?.close().catch(() => {});
     await nitro?.close().catch(() => {});
+    await localAuthServer?.dispose().catch(() => {});
     await stopDevelopmentSandboxResources({
       backendNames: getInitializedDevelopmentSandboxBackendNames(developmentSandboxRunId),
       devRunId: developmentSandboxRunId,

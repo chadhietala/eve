@@ -37,6 +37,10 @@ describe("integration catalog", () => {
     expect(getIntegrationEntry("nope")).toBeUndefined();
   });
 
+  it("uses Linear's Streamable HTTP endpoint", () => {
+    expect(getIntegrationEntry("linear")?.connection?.mcp?.url).toBe("https://mcp.linear.app/mcp");
+  });
+
   it("derives protocols from declared transports", () => {
     expect(connectionProtocols(getIntegrationEntry("notion")!.connection!)).toEqual([
       "mcp",

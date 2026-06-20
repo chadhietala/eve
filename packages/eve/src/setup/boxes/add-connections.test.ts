@@ -48,6 +48,10 @@ function makeBoxes(
 
 function createDeps() {
   return {
+    detectPackageManager: vi.fn<AddConnectionsDeps["detectPackageManager"]>(async () => ({
+      kind: "pnpm",
+      source: "lockfile",
+    })),
     ensureConnection: vi.fn<AddConnectionsDeps["ensureConnection"]>(async (options) => ({
       slug: options.slug ?? options.entry.slug,
       protocol: options.protocol,
@@ -59,11 +63,21 @@ function createDeps() {
       envKeysAdded: [],
       envKeysRequired: [],
     })),
+    ensureConnectionDependencies: vi.fn<AddConnectionsDeps["ensureConnectionDependencies"]>(
+      async () => [],
+    ),
+    listAuthoredConnections: vi.fn<AddConnectionsDeps["listAuthoredConnections"]>(async () => []),
+    runPackageManagerInstall: vi.fn<AddConnectionsDeps["runPackageManagerInstall"]>(
+      async () => true,
+    ),
     setupConnectionConnector: vi.fn<AddConnectionsDeps["setupConnectionConnector"]>(async () => ({
-      kind: "patched",
+      kind: "ready",
       created: true,
       connectorUid: "oauth/connector-1",
     })),
+    updateConnectionConnectorUid: vi.fn<AddConnectionsDeps["updateConnectionConnectorUid"]>(
+      async () => ({ patched: true }),
+    ),
   };
 }
 
@@ -90,12 +104,6 @@ describe("selectConnections + addConnections boxes", () => {
 
     await runHeadless(boxes, resolvedState(), silentSink, snapshot);
 
-    expect(deps.ensureConnection).toHaveBeenCalledWith({
-      projectRoot: "/tmp/project",
-      slug: "linear",
-      protocol: "mcp",
-      entry: expect.objectContaining({ slug: "linear" }),
-    });
     // Headless runs surface the connector command instead of provisioning,
     // since `vercel connect create` opens a browser.
     expect(deps.setupConnectionConnector).not.toHaveBeenCalled();
@@ -116,20 +124,195 @@ describe("selectConnections + addConnections boxes", () => {
 
     expect(deps.setupConnectionConnector).toHaveBeenCalledWith(
       expect.objectContaining({
+        principalType: "user",
         slug: "linear",
         service: "mcp.linear.app",
-        connectionFilePath: "/tmp/project/agent/connections/linear.ts",
         projectRoot: "/tmp/project",
       }),
     );
+    expect(deps.ensureConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entry: expect.objectContaining({
+          auth: expect.objectContaining({ connector: "oauth/connector-1" }),
+        }),
+      }),
+    );
+    expect(deps.setupConnectionConnector.mock.invocationCallOrder[0]).toBeLessThan(
+      deps.ensureConnectionDependencies.mock.invocationCallOrder[0]!,
+    );
+    expect(deps.ensureConnectionDependencies.mock.invocationCallOrder[0]).toBeLessThan(
+      deps.runPackageManagerInstall.mock.invocationCallOrder[0]!,
+    );
+    expect(deps.runPackageManagerInstall.mock.invocationCallOrder[0]).toBeLessThan(
+      deps.ensureConnection.mock.invocationCallOrder[0]!,
+    );
+    expect(deps.runPackageManagerInstall).toHaveBeenCalledWith(
+      "pnpm",
+      "/tmp/project",
+      expect.objectContaining({ onOutput: expect.any(Function) }),
+    );
+  });
+
+  test("presents ambiguous connectors and returns the explicit reuse choice", async () => {
+    const deps = createDeps();
+    let connectorChoice: unknown;
+    let presented: { value: string | number | boolean; label: string }[] = [];
+    let search: boolean | undefined;
+    let placeholder: string | undefined;
+    const prompter = createFakePrompter({
+      single: (opts) => {
+        presented = opts.options;
+        search = opts.search;
+        placeholder = opts.placeholder;
+        return "reuse:1";
+      },
+    }).prompter;
+    deps.setupConnectionConnector.mockImplementationOnce(async (options) => {
+      connectorChoice = await options.selectConnector?.({
+        connectors: [
+          { uid: "linear/team-a", id: "scl_a" },
+          { uid: "linear/team-b", id: "scl_b" },
+        ],
+        unavailableNames: ["team-a", "team-b"],
+        scope: "team",
+        service: "mcp.linear.app",
+        slug: "linear",
+        suggestedName: "linear-2",
+      });
+      return { kind: "ready", created: false, connectorUid: "linear/team-b" };
+    });
+    const boxes = makeBoxes({ prompter, presetConnections: ["linear"], deps });
+
+    await runInteractive(boxes, resolvedState(), silentSink, snapshot);
+
+    expect(connectorChoice).toEqual({
+      kind: "reuse",
+      connector: { uid: "linear/team-b", id: "scl_b" },
+    });
+    expect(presented).toEqual([
+      { value: "reuse:0", label: "linear/team-a", hint: "scl_a" },
+      { value: "reuse:1", label: "linear/team-b", hint: "scl_b" },
+      {
+        value: "create",
+        label: "Create a new connector",
+        hint: "Register another mcp.linear.app connector",
+      },
+    ]);
+    expect({ search, placeholder }).toEqual({
+      search: true,
+      placeholder: "type to search connectors",
+    });
+  });
+
+  test("prompts for a specific name after choosing to create a connector", async () => {
+    const deps = createDeps();
+    let connectorChoice: unknown;
+    let namePrompt: Parameters<Prompter["text"]>[0] | undefined;
+    const prompter = createFakePrompter({
+      single: () => "create",
+      text: (options) => {
+        namePrompt = options;
+        return "linear-rui-test";
+      },
+    }).prompter;
+    deps.setupConnectionConnector.mockImplementationOnce(async (options) => {
+      connectorChoice = await options.selectConnector?.({
+        connectors: [
+          { uid: "mcp.linear.app/linear", id: "scl_old" },
+          { uid: "mcp.linear.app/team-linear", id: "scl_team" },
+        ],
+        unavailableNames: ["linear", "team-linear"],
+        scope: "team",
+        service: "mcp.linear.app",
+        slug: "linear",
+        suggestedName: "linear-2",
+      });
+      return { kind: "ready", created: true, connectorUid: "mcp.linear.app/linear-rui-test" };
+    });
+    const boxes = makeBoxes({ prompter, presetConnections: ["linear"], deps });
+
+    await runInteractive(boxes, resolvedState(), silentSink, snapshot);
+
+    expect(connectorChoice).toEqual({ kind: "create", name: "linear-rui-test" });
+    expect(namePrompt).toEqual(
+      expect.objectContaining({
+        message: "New connector name",
+        defaultValue: "linear-2",
+      }),
+    );
+    expect(namePrompt?.validate?.("   ")).toBe("Connector name cannot be empty.");
+    expect(namePrompt?.validate?.("LINEAR")).toBe('Connector name "LINEAR" already exists.');
+    expect(namePrompt?.validate?.("linear-rui-test")).toBeUndefined();
+  });
+
+  test("goes directly to the name prompt when no reusable connector exists", async () => {
+    const deps = createDeps();
+    let connectorChoice: unknown;
+    const prompter = createFakePrompter({ text: () => "linear-new" }).prompter;
+    deps.setupConnectionConnector.mockImplementationOnce(async (options) => {
+      connectorChoice = await options.selectConnector?.({
+        connectors: [],
+        unavailableNames: ["linear"],
+        scope: "team",
+        service: "mcp.linear.app",
+        slug: "linear",
+        suggestedName: "linear-2",
+      });
+      return { kind: "ready", created: true, connectorUid: "mcp.linear.app/linear-new" };
+    });
+    const boxes = makeBoxes({ prompter, presetConnections: ["linear"], deps });
+
+    await runInteractive(boxes, resolvedState(), silentSink, snapshot);
+
+    expect(connectorChoice).toEqual({ kind: "create", name: "linear-new" });
+  });
+
+  test("reports dependency installation failure after connector provisioning", async () => {
+    const deps = createDeps();
+    deps.runPackageManagerInstall.mockResolvedValueOnce(false);
+    const boxes = makeBoxes({
+      prompter: createPrompter(),
+      presetConnections: ["linear"],
+      deps,
+    });
+
+    await expect(runInteractive(boxes, resolvedState(), silentSink, snapshot)).rejects.toThrow(
+      /pnpm install/,
+    );
+    expect(deps.setupConnectionConnector).toHaveBeenCalledOnce();
+    expect(deps.ensureConnectionDependencies).toHaveBeenCalledOnce();
+    expect(deps.ensureConnection).not.toHaveBeenCalled();
+    expect(deps.updateConnectionConnectorUid).not.toHaveBeenCalled();
+  });
+
+  test("does not scaffold when remote connector provisioning fails", async () => {
+    const deps = createDeps();
+    deps.setupConnectionConnector.mockRejectedValueOnce(new Error("Connect request failed."));
+    const boxes = makeBoxes({
+      prompter: createPrompter(),
+      presetConnections: ["linear"],
+      deps,
+    });
+
+    await expect(runInteractive(boxes, resolvedState(), silentSink, snapshot)).rejects.toThrow(
+      "Connect request failed.",
+    );
+
+    expect(deps.setupConnectionConnector).toHaveBeenCalledOnce();
+    expect(deps.ensureConnection).not.toHaveBeenCalled();
+    expect(deps.runPackageManagerInstall).not.toHaveBeenCalled();
   });
 
   test("uses the picker selection when no preset is given", async () => {
     const deps = createDeps();
     let presented: { value: string | number | boolean; label: string }[] = [];
+    let search: boolean | undefined;
+    let placeholder: string | undefined;
     const prompter = createFakePrompter({
       multiple: (opts) => {
         presented = opts.options;
+        search = opts.search;
+        placeholder = opts.placeholder;
         return ["notion"];
       },
     }).prompter;
@@ -146,6 +329,10 @@ describe("selectConnections + addConnections boxes", () => {
     // The interactive picker offers only curated catalog entries.
     expect(presented.length).toBeGreaterThan(0);
     expect(presented.some((option) => option.value === "custom")).toBe(false);
+    expect({ search, placeholder }).toEqual({
+      search: true,
+      placeholder: "type to search connections",
+    });
   });
 
   test("marks blocked catalog rows disabled with the reason", () => {
@@ -186,7 +373,7 @@ describe("selectConnections + addConnections boxes", () => {
         entry: expect.objectContaining({
           slug: "mycorp",
           mcp: { url: "https://mcp.mycorp.dev/sse" },
-          auth: { kind: "connect", connector: "mycorp" },
+          auth: { kind: "connect", connector: "oauth/connector-1", principalType: "user" },
         }),
       }),
     );
@@ -272,6 +459,7 @@ describe("selectConnections + addConnections boxes", () => {
 
   test("skips provisioning when the connection file already exists", async () => {
     const deps = createDeps();
+    deps.listAuthoredConnections.mockResolvedValueOnce(["linear"]);
     deps.ensureConnection.mockResolvedValueOnce({
       slug: "linear",
       protocol: "mcp",
@@ -292,6 +480,63 @@ describe("selectConnections + addConnections boxes", () => {
     expect(prompter.log.warning).toHaveBeenCalledWith(
       "Skipped linear (already exists; pass --force to overwrite).",
     );
+  });
+
+  test("provisions a pending folder-form connection at its existing path", async () => {
+    const deps = createDeps();
+    deps.ensureConnection.mockResolvedValueOnce({
+      slug: "linear",
+      protocol: "mcp",
+      action: "skipped",
+      filePath: "/tmp/project/agent/connections/linear/connection.mts",
+      filesWritten: [],
+      filesSkipped: ["/tmp/project/agent/connections/linear/connection.mts"],
+      packageJsonUpdated: [],
+      envKeysAdded: [],
+      envKeysRequired: [],
+    });
+    const boxes = [
+      selectConnections({
+        presetConnections: ["linear"],
+        asker: interactiveAsker(createPrompter()),
+      }),
+      addConnections({
+        prompter: createPrompter(),
+        deps,
+        provisionExistingConnect: true,
+      }),
+    ] as const;
+
+    await runInteractive(boxes, resolvedState(), silentSink, snapshot);
+
+    expect(deps.updateConnectionConnectorUid).toHaveBeenCalledWith(
+      "/tmp/project/agent/connections/linear/connection.mts",
+      "oauth/connector-1",
+    );
+  });
+
+  test("leaves a pending connection untouched when dependency installation fails", async () => {
+    const deps = createDeps();
+    deps.listAuthoredConnections.mockResolvedValueOnce(["linear"]);
+    deps.runPackageManagerInstall.mockResolvedValueOnce(false);
+    const boxes = [
+      selectConnections({
+        presetConnections: ["linear"],
+        asker: interactiveAsker(createPrompter()),
+      }),
+      addConnections({
+        prompter: createPrompter(),
+        deps,
+        provisionExistingConnect: true,
+      }),
+    ] as const;
+
+    await expect(runInteractive(boxes, resolvedState(), silentSink, snapshot)).rejects.toThrow(
+      /pnpm install/,
+    );
+
+    expect(deps.ensureConnection).not.toHaveBeenCalled();
+    expect(deps.updateConnectionConnectorUid).not.toHaveBeenCalled();
   });
 
   test("is skipped in headless mode when no connections are requested", async () => {
@@ -332,7 +577,7 @@ describe("selectConnections + addConnections boxes", () => {
     const deps = createDeps();
     deps.setupConnectionConnector.mockImplementation(async (opts) => {
       await opts.linkProject?.();
-      return { kind: "patched", created: true, connectorUid: "oauth/linear-1" };
+      return { kind: "ready", created: true, connectorUid: "oauth/linear-1" };
     });
     const boxes = makeBoxes({
       prompter: createPrompter(),
@@ -350,7 +595,7 @@ describe("selectConnections + addConnections boxes", () => {
     let linkedProjectId: string | undefined;
     deps.setupConnectionConnector.mockImplementation(async (opts) => {
       linkedProjectId = await opts.linkProject?.();
-      return { kind: "patched", created: true, connectorUid: "oauth/linear-1" };
+      return { kind: "ready", created: true, connectorUid: "oauth/linear-1" };
     });
     const boxes = makeBoxes({
       prompter: createPrompter(),

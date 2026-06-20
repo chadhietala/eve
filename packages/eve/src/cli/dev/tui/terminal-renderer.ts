@@ -14,6 +14,7 @@ import type {
   SubagentToolUpdate,
 } from "./runner.js";
 import { interruptedError } from "./errors.js";
+import { renderConnectionAuthPanel } from "./connection-auth-panel.js";
 import {
   dismissTypeahead,
   inlineCommandHint,
@@ -96,6 +97,11 @@ import {
 } from "./stream-format.js";
 
 type SetupOptionPanelState = Exclude<SetupSelectPanelState, { kind: "actions" }>;
+
+interface ActiveConnectionAuth {
+  update: ConnectionAuthUpdate;
+  cancelFocused: boolean;
+}
 
 export type TerminalInput = {
   isTTY?: boolean;
@@ -226,7 +232,6 @@ const STATUS = {
   toolResults: "Reading results…",
   streaming: "Responding…",
   executingTools: "Running tools…",
-  connectionAuth: "Waiting for connection authorization…",
 } as const;
 
 export class TerminalRenderer implements AgentTUIRenderer {
@@ -280,7 +285,6 @@ export class TerminalRenderer implements AgentTUIRenderer {
    */
   #lastCommitted?: PreviousBlock;
 
-  #connectionAuthPendingCount = 0;
   /** Vercel segment of the bottom status line; pushed by the runner. */
   #vercelStatus?: VercelStatusSnapshot;
   #inputText = "";
@@ -341,6 +345,8 @@ export class TerminalRenderer implements AgentTUIRenderer {
   #pendingEchoedPrompt?: string;
   /** The active setup flow's bordered panel: progress, question, status. */
   #setupFlow?: SetupFlowState;
+  readonly #activeConnectionAuths = new Map<string, ActiveConnectionAuth>();
+  readonly #parkedConnectionToolIds = new Set<string>();
   /** The clearable setup attention line (`⚠ … · /login`), rendered in the live footer. */
   #setupAttention?: string;
   /** Armed by {@link SetupFlowRenderer.waitForInterrupt}; fired by the idle key trap. */
@@ -914,29 +920,48 @@ export class TerminalRenderer implements AgentTUIRenderer {
       update.state === "declined" ||
       update.state === "failed" ||
       update.state === "timed-out";
+    const name = stripTerminalControls(update.name);
     this.#upsertBlock({
-      id: connectionAuthSectionId(update.name),
+      id: connectionAuthSectionId(name),
       kind: "connection-auth",
-      title: `${stripTerminalControls(update.name)} · authorization · ${update.state}`,
-      body: formatConnectionAuthContent(update),
-      preformatted: true,
+      title: connectionAuthHeadline(update.state),
+      subtitle: name,
+      body: formatConnectionAuthOutcome(update),
       live: !isTerminal,
     });
+
+    const showsPanel =
+      !isTerminal &&
+      update.challenge !== undefined &&
+      (this.#connectionAuth === "full" || this.#connectionAuth === "auto-collapsed");
+    if (showsPanel) {
+      const existing = this.#activeConnectionAuths.get(name);
+      this.#activeConnectionAuths.set(name, {
+        update,
+        cancelFocused: existing?.cancelFocused ?? false,
+      });
+      this.#parkRunningToolsForConnectionAuth();
+    } else {
+      this.#activeConnectionAuths.delete(name);
+      if (this.#activeConnectionAuths.size === 0) this.#resumeConnectionAuthTools();
+    }
     this.#paint();
   }
 
-  setConnectionAuthPendingCount(count: number): void {
-    const next = Math.max(0, count);
-    if (next === this.#connectionAuthPendingCount) return;
-    const wasPending = this.#connectionAuthPendingCount > 0;
-    this.#connectionAuthPendingCount = next;
-    if (next > 0) {
-      this.#status = STATUS.connectionAuth;
-      this.#paint();
-    } else if (wasPending) {
-      this.#status = STATUS.processing;
-      this.#paint();
+  #parkRunningToolsForConnectionAuth(): void {
+    for (const block of this.#blocks) {
+      if (block.kind !== "tool" || block.status !== "running" || block.id === undefined) continue;
+      block.status = "waiting";
+      this.#parkedConnectionToolIds.add(block.id);
     }
+  }
+
+  #resumeConnectionAuthTools(): void {
+    for (const id of this.#parkedConnectionToolIds) {
+      const block = this.#blockById.get(id);
+      if (block?.status === "waiting") block.status = "running";
+    }
+    this.#parkedConnectionToolIds.clear();
   }
 
   setVercelStatus(status: VercelStatusSnapshot): void {
@@ -965,7 +990,8 @@ export class TerminalRenderer implements AgentTUIRenderer {
     this.#subagentHeaders.clear();
     this.#pendingEchoedPrompt = undefined;
     this.#devRebuild = undefined;
-    this.#connectionAuthPendingCount = 0;
+    this.#activeConnectionAuths.clear();
+    this.#parkedConnectionToolIds.clear();
     this.#totalTokens = undefined;
     this.#promptTokens = undefined;
     this.#assistantOutputTokens = undefined;
@@ -1754,22 +1780,54 @@ export class TerminalRenderer implements AgentTUIRenderer {
   }
 
   #handleStreamingKey(key: TerminalKey) {
+    const authorization = this.#currentConnectionAuth();
+    if (authorization !== undefined) {
+      const intent = setupSelectionIntent(key);
+      switch (intent?.kind) {
+        case "cancel":
+          this.#interruptStream();
+          return;
+        case "move":
+          authorization.cancelFocused = true;
+          this.#paint();
+          return;
+        case "repaint":
+          this.#paint();
+          return;
+        case "submit":
+          if (authorization.cancelFocused) this.#interruptStream();
+          return;
+        case undefined:
+          break;
+      }
+    }
+
     switch (key.type) {
       case "ctrl-l":
       case "ctrl-r":
         this.#paint();
         break;
       case "ctrl-c":
-        if (!this.#interrupted) {
-          this.#interrupted = true;
-          this.#status = "Interrupted";
-          this.#resolveStreamInterrupt?.();
-          this.#paint();
-        }
+        this.#interruptStream();
         break;
       default:
         break;
     }
+  }
+
+  #currentConnectionAuth(): ActiveConnectionAuth | undefined {
+    let current: ActiveConnectionAuth | undefined;
+    for (const authorization of this.#activeConnectionAuths.values()) current = authorization;
+    return current;
+  }
+
+  #interruptStream(): void {
+    if (this.#interrupted) return;
+    this.#interrupted = true;
+    this.#activeConnectionAuths.clear();
+    this.#status = "Interrupted";
+    this.#resolveStreamInterrupt?.();
+    this.#paint();
   }
 
   #startCaretBlink() {
@@ -1884,7 +1942,9 @@ export class TerminalRenderer implements AgentTUIRenderer {
       // Blocks awaiting an approval decision or action.result stay live past
       // the end of the stream. Committing them here would freeze the pending
       // glyph into scrollback before the later decision/result can settle it.
-      if (block.status === "approval" || block.status === "running") continue;
+      if (block.status === "approval" || block.status === "running" || block.status === "waiting") {
+        continue;
+      }
       block.live = false;
     }
   }
@@ -2005,9 +2065,8 @@ export class TerminalRenderer implements AgentTUIRenderer {
   }
 
   #setStreamStatus(status: string): void {
-    const next = this.#connectionAuthPendingCount > 0 ? STATUS.connectionAuth : status;
-    if (this.#status === next) return;
-    this.#status = next;
+    if (this.#status === status) return;
+    this.#status = status;
     this.#paint();
   }
 
@@ -2323,6 +2382,24 @@ export class TerminalRenderer implements AgentTUIRenderer {
         content,
       };
       rows.push(...renderFlowPanel(state, this.#theme, width));
+      return rows;
+    }
+
+    const authorization = this.#currentConnectionAuth();
+    const challenge = authorization?.update.challenge;
+    if (authorization !== undefined && challenge !== undefined) {
+      const state: Parameters<typeof renderConnectionAuthPanel>[0] = {
+        cancelFocused: authorization.cancelFocused,
+        frame: this.#spinnerFrame(),
+        name: authorization.update.name,
+        now: Date.now(),
+      };
+      if (challenge.url !== undefined) state.url = challenge.url;
+      if (challenge.userCode !== undefined) state.userCode = challenge.userCode;
+      if (challenge.expiresAt !== undefined) state.expiresAt = challenge.expiresAt;
+      if (challenge.instructions !== undefined) state.instructions = challenge.instructions;
+      rows.push(...renderConnectionAuthPanel(state, this.#theme, width), "");
+      this.#pushStatusLine(rows, width);
       return rows;
     }
 
@@ -2829,7 +2906,7 @@ function renderNativeToolBlock(tool: NativeToolState, id: string, expanded: bool
     title: stripTerminalControls(tool.toolName),
     subtitle: summarizeToolArgs(tool.input),
     status: tool.status,
-    live: tool.status === "running" || tool.status === "approval",
+    live: tool.status === "running" || tool.status === "waiting" || tool.status === "approval",
     expanded,
     toolInput: tool.input,
   };
@@ -2885,20 +2962,26 @@ function connectionAuthSectionId(connectionName: string): string {
   return `connection-auth:${connectionName}`;
 }
 
-function formatConnectionAuthContent(update: ConnectionAuthUpdate): string {
-  const lines: string[] = [];
-  const description = stripTerminalControls(update.description);
-  if (description.length > 0) lines.push(description);
-  const challenge = update.challenge;
-  if (challenge?.url) lines.push(`URL: ${stripTerminalControls(challenge.url)}`);
-  if (challenge?.userCode) lines.push(`Code: ${stripTerminalControls(challenge.userCode)}`);
-  if (challenge?.expiresAt) lines.push(`Expires: ${stripTerminalControls(challenge.expiresAt)}`);
-  if (challenge?.instructions) lines.push(stripTerminalControls(challenge.instructions));
-  if (update.reason !== undefined) {
-    const reason = stripTerminalControls(update.reason);
-    if (reason.length > 0) lines.push(`Reason: ${reason}`);
+function connectionAuthHeadline(state: ConnectionAuthUpdate["state"]): string {
+  switch (state) {
+    case "required":
+    case "pending":
+      return "authorization required for";
+    case "authorized":
+      return "authorization complete for";
+    case "declined":
+      return "authorization declined for";
+    case "failed":
+      return "authorization failed for";
+    case "timed-out":
+      return "authorization timed out for";
   }
-  return lines.join("\n");
+}
+
+function formatConnectionAuthOutcome(update: ConnectionAuthUpdate): string {
+  if (update.reason === undefined) return "";
+  const reason = stripTerminalControls(update.reason);
+  return reason.length === 0 ? "" : `Reason: ${reason}`;
 }
 
 function formatQuestionContent(

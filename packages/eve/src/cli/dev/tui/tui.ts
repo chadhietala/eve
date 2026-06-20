@@ -1,5 +1,6 @@
 import { Client } from "#client/index.js";
 import { resolveDevelopmentClientOptions } from "#services/dev-client/client-options.js";
+import type { LocalDevelopmentUserCredential } from "#services/dev-client/local-user-credential.js";
 import {
   formatVercelAuthChallengeMessage,
   isVercelAuthChallenge,
@@ -20,11 +21,16 @@ export interface RunDevelopmentTuiInput extends TuiDisplayOptions {
    */
   readonly serverUrl: string;
   /**
-   * Absolute application root. When present and the server is a local dev
-   * server, enables the TUI's `/model` command to edit local agent source.
-   * Omitted for remote (`--url`) targets.
+   * Absolute application root. Present when the TUI starts or attaches to this
+   * project's local server, enabling setup commands to edit local agent source.
    */
   readonly appRoot?: string;
+  /**
+   * Temporary credential registered with the matching local dev server. It lets
+   * `localDev()` address a stable user-scoped Connect grant without trusting a
+   * caller-provided user id.
+   */
+  readonly localUserCredential?: Pick<LocalDevelopmentUserCredential, "refresh" | "token">;
   /**
    * Text to seed the prompt input with after the UI launches. The buffer is
    * editable and is not auto-submitted — the user presses Enter to send it.
@@ -43,16 +49,28 @@ export interface RunDevelopmentTuiInput extends TuiDisplayOptions {
  * the inline error region rather than crashing the command.
  */
 export async function runDevelopmentTui(input: RunDevelopmentTuiInput): Promise<void> {
-  const { serverUrl, appRoot, initialInput, ...display } = input;
+  const { serverUrl, appRoot, initialInput, localUserCredential, ...display } = input;
 
-  const client = new Client(resolveDevelopmentClientOptions(serverUrl));
+  const client = new Client(
+    resolveDevelopmentClientOptions(serverUrl, {
+      resolveLocalUserCredential: () => localUserCredential?.token,
+    }),
+  );
 
   const options: EveTUIRunnerOptions = {
     ...display,
     session: client.session(),
     client,
     serverUrl,
-    promptCommandHandler: createPromptCommandHandler({ appRoot }),
+    promptCommandHandler: createPromptCommandHandler({
+      appRoot,
+      afterSetupCommand: async () => {
+        await localUserCredential?.refresh();
+      },
+    }),
+    prepareTurn: async () => {
+      await localUserCredential?.refresh();
+    },
     formatTransportError: (error) =>
       isVercelAuthChallenge(error)
         ? formatVercelAuthChallengeMessage({ serverUrl })

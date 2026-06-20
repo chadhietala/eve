@@ -87,7 +87,7 @@ export interface SetupFlowRenderer {
    * Arms a key trap for the flow's working state — the status spinner between
    * questions, where no prompt is consuming keys. Ctrl-C or Esc resolves the
    * promise so the command can abandon an in-flight flow (e.g. a parked
-   * `vercel connect create` browser OAuth). Open questions own their keys; the
+   * `vercel connect create`). Open questions own their keys; the
    * trap covers only the gaps. `dispose` releases the trap; the promise then
    * never resolves.
    */

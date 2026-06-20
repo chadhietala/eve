@@ -36,7 +36,7 @@ export interface EnvHeader {
 /** How a scaffolded connection authenticates to its endpoint. */
 export type ConnectionAuthSpec =
   /**
-   * Vercel Connect-managed OAuth via `connect(<connector>)`.
+   * Vercel Connect-managed user OAuth via `connect(<connector>)`.
    *
    * `connector` is the value written into the generated `connect("…")` call.
    * It starts as a placeholder and is rewritten to the real connector UID once
@@ -45,7 +45,7 @@ export type ConnectionAuthSpec =
    * (e.g. the MCP host `mcp.linear.app`); when omitted, the connector must be
    * created out of band and its UID set by hand.
    */
-  | { kind: "connect"; connector: string; service?: string }
+  | { kind: "connect"; connector: string; principalType: "user"; service?: string }
   /** Static bearer token read from a single environment variable. */
   | { kind: "bearer-env"; envVar: string }
   /** Static credentials passed as one or more request headers. */
@@ -103,10 +103,30 @@ export const CUSTOM_CONNECTION_SLUG = "custom";
  * have an entry here — {@link buildCatalogEntry} throws otherwise.
  */
 const CONNECTION_AUTH: Readonly<Record<string, ConnectionAuthSpec>> = {
-  linear: { kind: "connect", connector: "linear", service: "mcp.linear.app" },
-  notion: { kind: "connect", connector: "notion", service: "mcp.notion.com" },
-  datadog: { kind: "connect", connector: "datadog", service: "mcp.datadoghq.com" },
-  honeycomb: { kind: "connect", connector: "honeycomb", service: "mcp.honeycomb.io" },
+  linear: {
+    kind: "connect",
+    connector: "linear",
+    principalType: "user",
+    service: "mcp.linear.app",
+  },
+  notion: {
+    kind: "connect",
+    connector: "notion",
+    principalType: "user",
+    service: "mcp.notion.com",
+  },
+  datadog: {
+    kind: "connect",
+    connector: "datadog",
+    principalType: "user",
+    service: "mcp.datadoghq.com",
+  },
+  honeycomb: {
+    kind: "connect",
+    connector: "honeycomb",
+    principalType: "user",
+    service: "mcp.honeycomb.io",
+  },
 };
 
 function buildCatalogEntry(

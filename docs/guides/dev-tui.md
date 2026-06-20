@@ -35,6 +35,7 @@ Each command echoes as an invocation line, asks through a bordered panel that ta
 | Command     | Does                                                                                                                              |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `/model`    | Opens a configure menu that loops until Done (or Esc). See [Configure the model and provider](#configure-the-model-and-provider). |
+| `/connect`  | Shows the connection catalog and configures the one you pick. See [Add a connection](#add-a-connection).                          |
 | `/channels` | Shows the agent's channel list and adds the one you pick. See [Add a channel](#add-a-channel).                                    |
 | `/deploy`   | Ships the agent to Vercel production, linking the directory first when it is unlinked.                                            |
 | `/loglevel` | Switches which logs the transcript shows. See [Control what logs show](#control-what-logs-show).                                  |
@@ -42,7 +43,7 @@ Each command echoes as an invocation line, asks through a bordered panel that ta
 | `/exit`     | Quits the TUI.                                                                                                                    |
 | `/help`     | Lists every command.                                                                                                              |
 
-`/model`, `/channels`, and `/deploy` manage the project and are available only when `eve dev` runs the server locally, not when connected to a remote server with `--url`.
+`/model`, `/connect`, `/channels`, and `/deploy` manage the project. They are available when the TUI starts the local server or attaches to the matching local server URL printed by another `eve dev` process. They are unavailable for deployment and unrelated `--url` targets.
 
 ### Configure the model and provider
 
@@ -55,6 +56,10 @@ The provider row demands attention (a bold yellow "Configure provider" with "Req
 ### Add a channel
 
 `/channels` shows the agent's channel list. Already-registered channels render as checked, focusable rows with an "Already installed" hint. Picking one adds it (including the Slack Connect provisioning), then installs the dependencies the scaffold added so the dev server can load the new channels right away. After each addition the list repaints with the channel checked, until Done (or Esc) leaves the flow.
+
+### Add a connection
+
+`/connect` shows the connection catalog. For a Connect-backed entry, eve reuses the connector already attached to the project, falls back to the team's connector for that service, or creates one when none exists. If several connectors match, `/connect` asks which one to reuse or whether to create another. The selected row stays active while eve completes connector creation and project attachment. Only then does eve write the authored connection and install its project dependency. A failed remote setup writes no connection file; running `/connect` again resumes an already-created connector from local provisioning state instead of creating another one. Because MCP authorization is user-scoped, the first tool call by each user separately displays its browser authorization challenge.
 
 ## Keyboard shortcuts
 
@@ -110,13 +115,13 @@ Connection flags: `--host` and `--port` bind the local server, and `--no-ui` run
 
 ## Remote: `eve dev <url>`
 
-Pass a URL and the TUI talks to a running deployment instead of starting a local server, which is handy for a Vercel preview or your production app.
+Pass a URL and the TUI connects without starting another server. This can be the local URL printed by an existing `eve dev --no-ui` process, a Vercel preview, or your production app.
 
 ```bash
 eve dev https://<your-app>
 ```
 
-The bare URL is shorthand for `--url`. `--host`, `--port`, and `--no-ui` are ignored against a remote target. If the deployment sits behind Vercel preview protection, set `VERCEL_AUTOMATION_BYPASS_SECRET` locally first. See [Deployment](./deployment) for the smoke-test flow.
+The bare URL is shorthand for `--url`. `--host`, `--port`, and `--no-ui` are ignored against a URL target. When the URL matches this project's active local server, the attached TUI registers its own Vercel CLI user grant. If a deployment sits behind Vercel preview protection, set `VERCEL_AUTOMATION_BYPASS_SECRET` locally first. See [Deployment](./deployment) for the smoke-test flow.
 
 ## What to read next
 

@@ -1,4 +1,5 @@
 import { getVercelOidcToken } from "#compiled/@vercel/oidc/index.js";
+import { EVE_LOCAL_DEV_USER_CREDENTIAL_HEADER } from "#protocol/local-dev-auth.js";
 import { EVE_ROUTE_PREFIX } from "#protocol/routes.js";
 
 const EVE_ROUTE_PREFIX_WITH_SEPARATOR = `${EVE_ROUTE_PREFIX}/`;
@@ -11,16 +12,15 @@ const EVE_ROUTE_PREFIX_WITH_SEPARATOR = `${EVE_ROUTE_PREFIX}/`;
  * infrastructure, so attaching a bearer would be wasted work and noise
  * in the request inspector.
  */
-const LOCAL_HOSTNAMES: ReadonlySet<string> = new Set([
-  "localhost",
-  "127.0.0.1",
-  "0.0.0.0",
-  "::1",
-  "[::1]",
-]);
+const LOCAL_HOSTNAMES: ReadonlySet<string> = new Set(["localhost", "::1", "[::1]"]);
+const LOOPBACK_IPV4_PREFIX = /^127\./;
 
 function isLocalEveServerUrl(url: URL): boolean {
-  return LOCAL_HOSTNAMES.has(url.hostname);
+  return (
+    LOCAL_HOSTNAMES.has(url.hostname) ||
+    LOOPBACK_IPV4_PREFIX.test(url.hostname) ||
+    url.hostname.endsWith(".localhost")
+  );
 }
 
 /**
@@ -237,6 +237,7 @@ function resolveDevelopmentHeadersInit(
  * bypass token would be wasted work.
  */
 export async function resolveDevelopmentClientHeaders(input: {
+  readonly localUserCredential?: string;
   readonly serverUrl: string;
 }): Promise<Record<string, string>> {
   const headers: Record<string, string> = {};
@@ -246,7 +247,12 @@ export async function resolveDevelopmentClientHeaders(input: {
     headers[VERCEL_PROTECTION_BYPASS_HEADER] = bypassSecret;
   }
 
-  if (!isLocalDevelopmentServerUrl(input.serverUrl)) {
+  if (isLocalDevelopmentServerUrl(input.serverUrl)) {
+    const localUserCredential = input.localUserCredential?.trim();
+    if (localUserCredential) {
+      headers[EVE_LOCAL_DEV_USER_CREDENTIAL_HEADER] = localUserCredential;
+    }
+  } else {
     const oidcToken = await resolveDevelopmentOidcToken();
 
     if (oidcToken.length > 0) {

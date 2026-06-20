@@ -15,6 +15,7 @@ import {
   type AgentTUIRenderer,
   type AgentTUISessionOptions,
   type AgentTUIStreamEvent,
+  type ConnectionAuthUpdate,
   type PromptCommandOutcome,
 } from "./runner.js";
 import { createPromptCommandHandler } from "./prompt-command-handler.js";
@@ -410,6 +411,72 @@ function sessionYieldingTurns(turns: ReadonlyArray<readonly unknown[]>): ClientS
   });
   return session;
 }
+
+describe("EveTUIRunner turn preparation", () => {
+  it("refreshes local identity before every turn dispatch", async () => {
+    const prompts: Array<string | undefined> = ["first", "second", undefined];
+    const session = sessionYieldingTurns([
+      [{ type: "session.waiting" }],
+      [{ type: "session.waiting" }],
+    ]);
+    const prepareTurn = vi.fn(async () => {});
+    const renderer = fakeRenderer({
+      readPrompt: vi.fn(async () => prompts.shift()),
+      renderStream: vi.fn(async (result) => {
+        for await (const event of result.events as AsyncIterable<unknown>) void event;
+      }),
+    });
+
+    await new EveTUIRunner({
+      session,
+      renderer,
+      name: "Weather Agent",
+      prepareTurn,
+    }).run();
+
+    expect(prepareTurn).toHaveBeenCalledTimes(2);
+    expect(prepareTurn.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(session.send).mock.invocationCallOrder[0]!,
+    );
+    expect(prepareTurn.mock.invocationCallOrder[1]).toBeLessThan(
+      vi.mocked(session.send).mock.invocationCallOrder[1]!,
+    );
+  });
+});
+
+describe("EveTUIRunner connection authorization status", () => {
+  it("forwards an authorization challenge to the renderer", async () => {
+    const updates: ConnectionAuthUpdate[] = [];
+    const prompts: Array<string | undefined> = ["search notion", undefined];
+    const session = sessionYielding([
+      {
+        type: "authorization.required",
+        data: {
+          authorization: { url: "https://connect.vercel.com/authorize/example" },
+          description: "Authorization required for notion",
+          name: "notion",
+        },
+      },
+      { type: "session.waiting" },
+    ]);
+    const renderer = fakeRenderer({
+      readPrompt: vi.fn(async () => prompts.shift()),
+      renderStream: vi.fn(async (result) => {
+        for await (const event of result.events as AsyncIterable<unknown>) void event;
+      }),
+      upsertConnectionAuth: (update) => updates.push(update),
+    });
+
+    await new EveTUIRunner({ session, renderer, name: "Weather Agent" }).run();
+
+    expect(updates).toContainEqual({
+      challenge: { url: "https://connect.vercel.com/authorize/example" },
+      description: "Authorization required for notion",
+      name: "notion",
+      state: "required",
+    });
+  });
+});
 
 describe("EveTUIRunner terminal-failure recovery", () => {
   it("starts a fresh session and posts a notice after session.failed", async () => {

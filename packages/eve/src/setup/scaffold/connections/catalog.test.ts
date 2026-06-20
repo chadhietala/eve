@@ -35,6 +35,9 @@ describe("catalog integrity", () => {
   test("every curated entry authenticates via Connect", () => {
     for (const entry of CONNECTION_CATALOG) {
       expect(entry.auth.kind).toBe("connect");
+      if (entry.auth.kind === "connect") {
+        expect(entry.auth.principalType).toBe("user");
+      }
     }
   });
 
@@ -50,7 +53,12 @@ describe("connectorServiceForEntry", () => {
     expect(
       connectorServiceForEntry({
         mcp: { url: "https://mcp.example.com/sse" },
-        auth: { kind: "connect", connector: "x", service: "explicit.example" },
+        auth: {
+          kind: "connect",
+          connector: "x",
+          principalType: "user",
+          service: "explicit.example",
+        },
       }),
     ).toBe("explicit.example");
   });
@@ -59,7 +67,7 @@ describe("connectorServiceForEntry", () => {
     expect(
       connectorServiceForEntry({
         mcp: { url: "https://mcp.example.com/sse" },
-        auth: { kind: "connect", connector: "x" },
+        auth: { kind: "connect", connector: "x", principalType: "user" },
       }),
     ).toBe("mcp.example.com");
   });
@@ -73,7 +81,7 @@ describe("connectorServiceForEntry", () => {
 
 describe("mcpServiceHost", () => {
   test("extracts the host from a URL", () => {
-    expect(mcpServiceHost("https://mcp.linear.app/sse")).toBe("mcp.linear.app");
+    expect(mcpServiceHost("https://mcp.linear.app/mcp")).toBe("mcp.linear.app");
   });
 
   test("returns undefined for missing or unparseable input", () => {

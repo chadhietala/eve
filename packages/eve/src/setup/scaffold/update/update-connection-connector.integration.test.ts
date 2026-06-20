@@ -4,7 +4,11 @@ import { join } from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-import { updateConnectionConnectorUid } from "./update-connection-connector.js";
+import {
+  parseConnectionConnectorUid,
+  readConnectionConnectorUid,
+  updateConnectionConnectorUid,
+} from "./update-connection-connector.js";
 
 async function writeTemp(contents: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "eve-conn-"));
@@ -14,6 +18,15 @@ async function writeTemp(contents: string): Promise<string> {
 }
 
 describe("updateConnectionConnectorUid", () => {
+  test("reads the current connector UID without mutating the module", async () => {
+    const source = 'export default { auth: connect("linear/existing") };\n';
+    const path = await writeTemp(source);
+
+    expect(parseConnectionConnectorUid(source)).toBe("linear/existing");
+    await expect(readConnectionConnectorUid(path)).resolves.toBe("linear/existing");
+    expect(await readFile(path, "utf8")).toBe(source);
+  });
+
   test("rewrites the connector UID literal in a connect() call", async () => {
     const path = await writeTemp(
       [

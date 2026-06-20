@@ -13,6 +13,8 @@ type ExtensionCommand = Extract<PromptCommand, { type: "extension" }>;
 
 export interface PromptCommandHandlerOptions {
   readonly appRoot?: string;
+  /** Refreshes process-local state after a setup flow may have changed Vercel auth. */
+  readonly afterSetupCommand?: (command: ExtensionCommand["name"]) => Promise<void>;
   /** Test seam; defaults to the model flow's shared source-change apply. */
   readonly applyModel?: (input: { appRoot: string; slug: string }) => Promise<ApplyModelOutcome>;
   /** Test seam; defaults to the model flow's external-provider refusal check. */
@@ -86,6 +88,7 @@ export function createPromptCommandHandler(
         };
         if (options.flows !== undefined) commandInput.flows = options.flows;
         const result = await runTuiSetupCommand(commandInput);
+        await options.afterSetupCommand?.(command.name);
         preserveFlowDiagnostics = result.preserveFlowDiagnostics;
         const outcome: PromptCommandOutcome = { message: result.message };
         if (result.vercelEffect !== undefined) outcome.vercelEffect = result.vercelEffect;

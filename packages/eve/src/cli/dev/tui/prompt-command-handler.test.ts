@@ -128,4 +128,23 @@ describe("createPromptCommandHandler", () => {
       vi.resetModules();
     }
   });
+
+  it("refreshes the local user grant after /login completes", async () => {
+    const afterSetupCommand = vi.fn(async () => {});
+    const setupFlow = setupFlowRenderer();
+    const handler = createPromptCommandHandler({
+      appRoot: APP_ROOT,
+      afterSetupCommand,
+      flows: {
+        runLoginFlow: async () => ({ kind: "logged-in" }),
+      },
+    });
+
+    await handler.handle(
+      { type: "extension", name: "login", argument: "" },
+      context({ setupFlow }),
+    );
+
+    expect(afterSetupCommand).toHaveBeenCalledWith("login");
+  });
 });

@@ -1,4 +1,10 @@
-export type PromptCommandExtensionName = "model" | "channels" | "deploy" | "login" | "vc";
+export type PromptCommandExtensionName =
+  | "model"
+  | "channels"
+  | "connect"
+  | "deploy"
+  | "login"
+  | "vc";
 
 /** The slash commands the prompt accepts. */
 export type PromptCommand =
@@ -85,6 +91,13 @@ export const PROMPT_COMMANDS: readonly PromptCommandSpec[] = [
     description: "Add chat channels to the agent",
     takesArgument: false,
     build: () => ({ type: "extension", name: "channels", argument: "" }),
+  },
+  {
+    name: "connect",
+    aliases: [],
+    description: "Connect the agent to external services (MCP, OpenAPI)",
+    takesArgument: false,
+    build: () => ({ type: "extension", name: "connect", argument: "" }),
   },
   {
     name: "deploy",

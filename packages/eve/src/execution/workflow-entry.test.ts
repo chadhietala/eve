@@ -725,6 +725,48 @@ describe("workflowEntry", () => {
     expect(newDispose).toHaveBeenCalledTimes(1);
   });
 
+  it("resumes an authorization batch after the first completed callback", async () => {
+    const sessionState = createBaseSessionState();
+    vi.mocked(createSessionStep).mockResolvedValue(createSessionStepResultForMock(sessionState));
+
+    const linearCallback: HookPayload = {
+      kind: "deliver",
+      payloads: [
+        {
+          authorizationCallback: {
+            callback: { method: "GET", params: {} },
+            connectionName: "linear",
+          },
+        },
+      ],
+    };
+    const authNext = vi
+      .fn<() => Promise<IteratorResult<HookPayload>>>()
+      .mockResolvedValueOnce({ done: false, value: linearCallback })
+      .mockRejectedValueOnce(new Error("waited for an unrelated authorization callback"));
+
+    installHookMocks({
+      authNext,
+      turnCompletions: [
+        turnResult({
+          action: "park",
+          authorizationNames: ["datadog", "linear"],
+          sessionState,
+        }),
+        turnResult({ action: "done", output: "linear authorized", sessionState }),
+      ],
+    });
+
+    const result = await workflowEntry({
+      input: { message: "find linear issues" },
+      serializedContext: createSerializedContext(),
+    });
+
+    expect(result).toEqual({ output: "linear authorized" });
+    expect(authNext).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(dispatchTurnStep).mock.calls[1]?.[0].delivery).toEqual(linearCallback);
+  });
+
   it("disposes the workflow hook after the loop exits", async () => {
     const sessionState = createBaseSessionState();
     vi.mocked(createSessionStep).mockResolvedValue(createSessionStepResultForMock(sessionState));
@@ -862,6 +904,7 @@ function createSubagentInputRequest(): HookPayload {
 
 function turnResult(input: {
   readonly action: "done" | "park" | "dispatch-runtime-actions";
+  readonly authorizationNames?: readonly string[];
   readonly output?: string;
   readonly pendingActionKeys?: readonly string[];
   readonly serializedContext?: Record<string, unknown>;
@@ -892,6 +935,7 @@ function turnResult(input: {
   }
   return {
     action: {
+      authorizationNames: input.authorizationNames,
       kind: "park",
       serializedContext,
       sessionState: input.sessionState,
@@ -901,6 +945,7 @@ function turnResult(input: {
 }
 
 function installHookMocks(input: {
+  readonly authNext?: () => Promise<IteratorResult<HookPayload>>;
   readonly parkHooks?: readonly ParkHookConfig[];
   readonly symbolDispose?: () => void;
   readonly turnCompletions: readonly TurnCompletionPayload[];
@@ -920,7 +965,7 @@ function installHookMocks(input: {
     }
 
     if (token.endsWith(":auth")) {
-      return createMockHook({ token, values: [] }) as never;
+      return createMockHook({ next: input.authNext, token, values: [] }) as never;
     }
 
     const config = parkHooks.shift() ?? { token, values: [] };

@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { describe, expect, test } from "vitest";
 
 import { getCatalogEntry } from "../connections/catalog.js";
-import { ensureConnection, listAuthoredConnections } from "./connections.js";
+import {
+  ensureConnection,
+  ensureConnectionDependencies,
+  listAuthoredConnections,
+  listPendingConnectConnections,
+} from "./connections.js";
 
 async function createTempDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), "eve-connections-"));
@@ -40,6 +45,7 @@ describe("ensureConnection", () => {
     const source = await readFile(result.filePath, "utf8");
     expect(source).toContain('import { connect } from "@vercel/connect/eve";');
     expect(source).toContain("defineMcpClientConnection");
+    expect(source).toContain('url: "https://mcp.linear.app/mcp"');
     expect(source).toContain('auth: connect("linear")');
 
     await expect(readFile(join(projectRoot, "package.json"), "utf8")).resolves.toContain(
@@ -107,6 +113,7 @@ describe("ensureConnection", () => {
     const filePath = join(projectRoot, "agent/connections/linear.ts");
     await mkdir(join(projectRoot, "agent/connections"), { recursive: true });
     await writeFile(filePath, "existing\n", "utf8");
+    await writeFile(join(projectRoot, "package.json"), '{ "name": "demo" }\n', "utf8");
 
     const skipped = await ensureConnection({
       projectRoot,
@@ -117,6 +124,9 @@ describe("ensureConnection", () => {
     expect(skipped.action).toBe("skipped");
     expect(skipped.filesSkipped).toEqual([filePath]);
     await expect(readFile(filePath, "utf8")).resolves.toBe("existing\n");
+    await expect(readFile(join(projectRoot, "package.json"), "utf8")).resolves.not.toContain(
+      "@vercel/connect",
+    );
 
     const overwritten = await ensureConnection({
       projectRoot,
@@ -128,6 +138,38 @@ describe("ensureConnection", () => {
     expect(overwritten.action).toBe("overwritten");
     expect(overwritten.filesOverwritten).toEqual([filePath]);
     await expect(readFile(filePath, "utf8")).resolves.toContain("defineMcpClientConnection");
+    await expect(readFile(join(projectRoot, "package.json"), "utf8")).resolves.toContain(
+      '"@vercel/connect": "0.0.0-test"',
+    );
+  });
+
+  test("prepares dependencies without rewriting a folder-form placeholder", async () => {
+    const projectRoot = await createTempDir();
+    const folderPath = join(projectRoot, "agent/connections/linear/connection.mts");
+    await mkdir(join(projectRoot, "agent/connections/linear"), { recursive: true });
+    await writeFile(folderPath, 'export default { auth: connect("linear") };\n', "utf8");
+    await writeFile(join(projectRoot, "package.json"), '{ "name": "demo" }\n', "utf8");
+
+    const packageJsonUpdated = await ensureConnectionDependencies({
+      projectRoot,
+      entry: entry("linear"),
+      connectPackageVersion: "0.0.0-test",
+    });
+    const result = await ensureConnection({
+      projectRoot,
+      protocol: "mcp",
+      entry: entry("linear"),
+    });
+
+    expect(result).toMatchObject({ action: "skipped", filePath: folderPath });
+    expect(packageJsonUpdated).toHaveLength(1);
+    expect(result.packageJsonUpdated).toEqual([]);
+    await expect(readFile(join(projectRoot, "package.json"), "utf8")).resolves.toContain(
+      '"@vercel/connect": "0.0.0-test"',
+    );
+    await expect(
+      readFile(join(projectRoot, "agent/connections/linear.ts"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   test("scaffolds a custom MCP connection", async () => {
@@ -178,5 +220,22 @@ describe("listAuthoredConnections", () => {
     await writeFile(join(dir, "README.md"), "ignore me\n", "utf8");
 
     await expect(listAuthoredConnections(projectRoot)).resolves.toEqual(["datadog", "linear"]);
+  });
+
+  test("identifies file- and folder-form Connect placeholders that still need setup", async () => {
+    const projectRoot = await createTempDir();
+    const dir = join(projectRoot, "agent/connections");
+    await mkdir(join(dir, "notion"), { recursive: true });
+    await writeFile(join(dir, "linear.ts"), 'export default { auth: connect("linear") };\n');
+    await writeFile(
+      join(dir, "notion", "connection.ts"),
+      'export default { auth: connect("notion") };\n',
+    );
+    await writeFile(
+      join(dir, "datadog.ts"),
+      'export default { auth: connect("mcp.datadoghq.com/existing") };\n',
+    );
+
+    await expect(listPendingConnectConnections(projectRoot)).resolves.toEqual(["linear", "notion"]);
   });
 });

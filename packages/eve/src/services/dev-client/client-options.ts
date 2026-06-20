@@ -12,9 +12,16 @@ import {
  * channel auth accepts unauthenticated calls); remote hosts attach it
  * alongside any protection-bypass headers resolved per request.
  */
-export function resolveDevelopmentClientOptions(serverUrl: string): ClientOptions {
+export function resolveDevelopmentClientOptions(
+  serverUrl: string,
+  input: { readonly resolveLocalUserCredential?: () => string | undefined } = {},
+): ClientOptions {
   const base = {
-    headers: () => resolveDevelopmentClientHeaders({ serverUrl }),
+    headers: () =>
+      resolveDevelopmentClientHeaders({
+        localUserCredential: input.resolveLocalUserCredential?.(),
+        serverUrl,
+      }),
     host: serverUrl,
   };
 

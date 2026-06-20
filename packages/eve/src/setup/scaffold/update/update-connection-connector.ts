@@ -7,6 +7,22 @@ import { readFile, writeFile } from "node:fs/promises";
  */
 const CONNECT_CONNECTOR_REGEX = /(\bconnect\(\s*)(["'`])([^"'`]+)\2/;
 
+/** Reads the string literal passed to the first generated `connect(...)` call. */
+export function parseConnectionConnectorUid(source: string): string | undefined {
+  return CONNECT_CONNECTOR_REGEX.exec(source)?.[3];
+}
+
+/** Reads a Connect connector UID from one authored connection module. */
+export async function readConnectionConnectorUid(
+  connectionFilePath: string,
+): Promise<string | undefined> {
+  try {
+    return parseConnectionConnectorUid(await readFile(connectionFilePath, "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Replaces the connector UID literal in a scaffolded Connect connection
  * definition (`auth: connect("…")`). Returns `{ patched: false }` when the file

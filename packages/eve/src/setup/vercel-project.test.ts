@@ -9,6 +9,7 @@ import { createFakePrompter } from "#internal/testing/fake-prompter.js";
 import {
   assertNewProjectNameAvailable,
   getVercelAuthStatus,
+  getVercelUserIdentity,
   linkProject,
   listProjects,
   listTeams,
@@ -221,6 +222,31 @@ describe("getVercelAuthStatus", () => {
       failedCapture("", "Error: getaddrinfo ENOTFOUND api.vercel.com"),
     );
     await expect(getVercelAuthStatus("/tmp/eve-agent")).resolves.toBe("unavailable");
+  });
+});
+
+describe("getVercelUserIdentity", () => {
+  it("returns the stable user id from the authenticated Vercel API", async () => {
+    mockedCaptureVercel.mockResolvedValueOnce(
+      captured(JSON.stringify({ user: { id: "vercel-user-123" } })),
+    );
+
+    await expect(getVercelUserIdentity("/tmp/eve-agent")).resolves.toEqual({
+      id: "vercel-user-123",
+    });
+    expect(mockedCaptureVercel).toHaveBeenCalledWith(
+      ["api", "/v2/user", "--raw"],
+      expect.objectContaining({ cwd: "/tmp/eve-agent", timeoutMs: 10_000 }),
+    );
+  });
+
+  it("returns null when the user lookup fails or omits the stable id", async () => {
+    mockedCaptureVercel
+      .mockResolvedValueOnce(failedCapture("", "Error: Not authenticated"))
+      .mockResolvedValueOnce(captured(JSON.stringify({ user: { email: "dev@example.com" } })));
+
+    await expect(getVercelUserIdentity("/tmp/eve-agent")).resolves.toBeNull();
+    await expect(getVercelUserIdentity("/tmp/eve-agent")).resolves.toBeNull();
   });
 });
 

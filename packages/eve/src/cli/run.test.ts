@@ -42,7 +42,9 @@ describe("CLI command registration", () => {
 
 describe("eve dev --input", () => {
   it("forwards the initial draft to the interactive TUI", async () => {
-    const runDevelopmentTui = vi.fn(async () => {});
+    const runDevelopmentTui = vi.fn<
+      (input: { serverUrl: string; localUserCredential?: unknown }) => Promise<void>
+    >(async () => {});
 
     await withInteractiveTerminal(() =>
       runCli(
@@ -96,6 +98,172 @@ describe("eve dev --logs", () => {
       expect.objectContaining({
         logs: "sandbox",
         serverUrl: "https://example.com/",
+      }),
+    );
+  });
+});
+
+describe("eve dev local user projection", () => {
+  const localAuth = { serverInstanceId: "a".repeat(32), version: 1 } as const;
+
+  it("registers the integrated TUI after the local server starts", async () => {
+    const runDevelopmentTui = vi.fn<
+      (input: { serverUrl: string; localUserCredential?: unknown }) => Promise<void>
+    >(async () => {});
+    let hostStarted = false;
+    const startHost = vi.fn(async () => {
+      hostStarted = true;
+      return {
+        localAuth,
+        url: "http://localhost:2000",
+        close: async () => {},
+      };
+    });
+    const dispose = vi.fn(async () => {});
+    const createLocalDevelopmentUserCredential = vi.fn(
+      (input: {
+        resolveServer(): Promise<typeof localAuth | undefined>;
+        resolveUserId(): Promise<string | undefined>;
+      }) => ({
+        token: "local-user-token",
+        refresh: async () => {
+          expect(hostStarted).toBe(true);
+          expect(await input.resolveServer()).toBe(localAuth);
+          expect(await input.resolveUserId()).toBe("vercel-user-123");
+        },
+        dispose,
+      }),
+    );
+
+    await withInteractiveTerminal(() =>
+      runCli(
+        ["dev"],
+        { error: () => {}, log: () => {} },
+        {
+          createLocalDevelopmentUserCredential,
+          getVercelUserIdentity: async () => ({ id: "vercel-user-123" }),
+          runDevelopmentTui,
+          startHost,
+        },
+      ),
+    );
+
+    const input = runDevelopmentTui.mock.calls[0]?.[0];
+    expect(input).toEqual(
+      expect.objectContaining({
+        localUserCredential: expect.objectContaining({
+          dispose: expect.any(Function),
+          refresh: expect.any(Function),
+          token: "local-user-token",
+        }),
+        serverUrl: "http://localhost:2000",
+      }),
+    );
+    expect(createLocalDevelopmentUserCredential).toHaveBeenCalledWith(
+      expect.objectContaining({ resolveServer: expect.any(Function) }),
+    );
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the credential refreshable when the Vercel CLI user is unavailable", async () => {
+    const runDevelopmentTui = vi.fn(async () => {});
+    const createLocalDevelopmentUserCredential = vi.fn(
+      (input: { resolveUserId(): Promise<string | undefined> }) => ({
+        token: undefined,
+        refresh: async () => {
+          expect(await input.resolveUserId()).toBeUndefined();
+        },
+        dispose: async () => {},
+      }),
+    );
+
+    await withInteractiveTerminal(() =>
+      runCli(
+        ["dev"],
+        { error: () => {}, log: () => {} },
+        {
+          createLocalDevelopmentUserCredential,
+          getVercelUserIdentity: async () => null,
+          runDevelopmentTui,
+          startHost: async () => ({
+            localAuth,
+            url: "http://localhost:2000",
+            close: async () => {},
+          }),
+        },
+      ),
+    );
+
+    expect(runDevelopmentTui).toHaveBeenCalledWith(
+      expect.objectContaining({
+        localUserCredential: expect.objectContaining({ token: undefined }),
+      }),
+    );
+  });
+
+  it("registers an attached TUI only when localhost metadata matches this app", async () => {
+    const runDevelopmentTui = vi.fn(async () => {});
+    const resolveLocalDevelopmentServerAuth = vi.fn(async () => localAuth);
+    const createLocalDevelopmentUserCredential = vi.fn(
+      (input: { resolveServer: () => Promise<typeof localAuth | undefined> }) => ({
+        token: "attached-user-token",
+        refresh: async () => {
+          await input.resolveServer();
+        },
+        dispose: async () => {},
+      }),
+    );
+
+    await withInteractiveTerminal(() =>
+      runCli(
+        ["dev", "--url", "http://127.0.0.1:4321"],
+        { error: () => {}, log: () => {} },
+        {
+          createLocalDevelopmentUserCredential,
+          resolveLocalDevelopmentServerAuth,
+          runDevelopmentTui,
+        },
+      ),
+    );
+
+    expect(resolveLocalDevelopmentServerAuth).toHaveBeenCalledWith(
+      expect.objectContaining({ serverUrl: "http://127.0.0.1:4321/" }),
+    );
+    expect(runDevelopmentTui).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appRoot: expect.any(String),
+        localUserCredential: expect.objectContaining({ token: "attached-user-token" }),
+      }),
+    );
+    expect(createLocalDevelopmentUserCredential).toHaveBeenCalledWith(
+      expect.objectContaining({ resolveServer: expect.any(Function) }),
+    );
+    const credentialInput = createLocalDevelopmentUserCredential.mock.calls[0]?.[0];
+    expect(await credentialInput?.resolveServer()).toBe(localAuth);
+    expect(resolveLocalDevelopmentServerAuth).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not project this app's user into an unrelated localhost server", async () => {
+    const runDevelopmentTui = vi.fn(async () => {});
+    const createLocalDevelopmentUserCredential = vi.fn();
+
+    await withInteractiveTerminal(() =>
+      runCli(
+        ["dev", "--url", "http://127.0.0.1:4321"],
+        { error: () => {}, log: () => {} },
+        {
+          createLocalDevelopmentUserCredential,
+          resolveLocalDevelopmentServerAuth: async () => undefined,
+          runDevelopmentTui,
+        },
+      ),
+    );
+
+    expect(createLocalDevelopmentUserCredential).not.toHaveBeenCalled();
+    expect(runDevelopmentTui).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appRoot: undefined,
+        localUserCredential: undefined,
       }),
     );
   });

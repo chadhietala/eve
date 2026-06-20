@@ -41,6 +41,16 @@ const VercelApiErrorSchema = z.object({
     .optional(),
 });
 
+const VercelUserIdentityResponseSchema = z.object({
+  user: z.object({
+    id: z.string().min(1),
+  }),
+});
+
+export interface VercelUserIdentity {
+  readonly id: string;
+}
+
 export interface VercelProjectOperationOptions {
   signal?: AbortSignal;
 }
@@ -359,6 +369,23 @@ export async function getVercelAuthStatus(
   if (result.ok) return "authenticated";
   if (result.failure.errno === "ENOENT") return "cli-missing";
   return isLoggedOutFailure(result.failure) ? "logged-out" : "unavailable";
+}
+
+/** Returns the stable id of the user authenticated in the Vercel CLI. */
+export async function getVercelUserIdentity(
+  projectRoot: string,
+  options: VercelProjectOperationOptions = {},
+): Promise<VercelUserIdentity | null> {
+  const result = await captureVercel(["api", "/v2/user", "--raw"], {
+    cwd: projectRoot,
+    signal: options.signal,
+    timeoutMs: WHOAMI_TIMEOUT_MS,
+  });
+  options.signal?.throwIfAborted();
+  if (!result.ok) return null;
+
+  const parsed = VercelUserIdentityResponseSchema.safeParse(safeParseJson(result.stdout));
+  return parsed.success ? { id: parsed.data.user.id } : null;
 }
 
 /**

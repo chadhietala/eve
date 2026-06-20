@@ -14,6 +14,7 @@ import { pathExists, writeTextFile } from "../files.js";
 import { resolveVersionToken } from "../version-tokens.js";
 import { getSupportedModuleBaseName, matchesSupportedModuleBaseName } from "./module-files.js";
 import { patchPackageJson } from "./package-json.js";
+import { readConnectionConnectorUid } from "./update-connection-connector.js";
 import type { PackageJsonMutation } from "./channels.js";
 
 const DEFAULT_CONNECT_PACKAGE_VERSION = "__VERCEL_CONNECT_VERSION__";
@@ -50,6 +51,12 @@ export interface EnsureConnectionOptions {
   protocol: ConnectionProtocol;
   entry: ConnectionInput;
   force?: boolean;
+  connectPackageVersion?: string;
+}
+
+export interface EnsureConnectionDependenciesOptions {
+  projectRoot: string;
+  entry: ConnectionInput;
   connectPackageVersion?: string;
 }
 
@@ -158,6 +165,19 @@ async function ensureConnectDependency(
   ];
 }
 
+/** Adds the package dependency required by a Connect-auth connection. */
+export async function ensureConnectionDependencies(
+  options: EnsureConnectionDependenciesOptions,
+): Promise<PackageJsonMutation[]> {
+  if (resolveAuth(options.entry).kind !== "connect") return [];
+
+  const connectPackageVersion = resolveVersionToken(
+    "connectPackageVersion",
+    options.connectPackageVersion ?? DEFAULT_CONNECT_PACKAGE_VERSION,
+  );
+  return ensureConnectDependency(join(options.projectRoot, "package.json"), connectPackageVersion);
+}
+
 function envKeyPresent(source: string, key: string): boolean {
   const pattern = new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=`, "m");
   return pattern.test(source);
@@ -197,9 +217,25 @@ export async function ensureConnection(
     );
   }
 
-  const filePath = join(options.projectRoot, USER_AUTHORED_CONNECTION_DIR, `${slug}.ts`);
+  const authoredModules = await listAuthoredConnectionModules(options.projectRoot);
+  const matchingModules = authoredModules.filter((module) => module.slug === slug);
+  if (matchingModules.length > 1) {
+    throw new Error(
+      `Connection "${slug}" has multiple authored modules: ${matchingModules
+        .map((module) => module.filePath)
+        .join(", ")}. Keep exactly one before retrying.`,
+    );
+  }
+  const filePath =
+    matchingModules[0]?.filePath ??
+    join(options.projectRoot, USER_AUTHORED_CONNECTION_DIR, `${slug}.ts`);
   const envKeysRequired = envKeysForAuth(auth);
   const fileAlreadyExists = await pathExists(filePath);
+
+  const packageJsonUpdated =
+    auth.kind === "connect" && (!fileAlreadyExists || options.force === true)
+      ? await ensureConnectionDependencies(options)
+      : [];
 
   if (!options.force && fileAlreadyExists) {
     return {
@@ -209,24 +245,10 @@ export async function ensureConnection(
       filePath,
       filesWritten: [],
       filesSkipped: [filePath],
-      packageJsonUpdated: [],
+      packageJsonUpdated,
       envKeysAdded: [],
       envKeysRequired,
     };
-  }
-
-  const packageJsonUpdated: PackageJsonMutation[] = [];
-  if (auth.kind === "connect") {
-    const connectPackageVersion = resolveVersionToken(
-      "connectPackageVersion",
-      options.connectPackageVersion ?? DEFAULT_CONNECT_PACKAGE_VERSION,
-    );
-    packageJsonUpdated.push(
-      ...(await ensureConnectDependency(
-        join(options.projectRoot, "package.json"),
-        connectPackageVersion,
-      )),
-    );
   }
 
   await writeTextFile(
@@ -259,8 +281,14 @@ export async function ensureConnection(
   return result;
 }
 
-/** Lists authored connection names under `agent/connections/` (file and folder form). */
-export async function listAuthoredConnections(projectRoot: string): Promise<string[]> {
+interface AuthoredConnectionModule {
+  readonly filePath: string;
+  readonly slug: string;
+}
+
+async function listAuthoredConnectionModules(
+  projectRoot: string,
+): Promise<AuthoredConnectionModule[]> {
   const connectionsDir = join(projectRoot, USER_AUTHORED_CONNECTION_DIR);
   let entries;
   try {
@@ -270,18 +298,26 @@ export async function listAuthoredConnections(projectRoot: string): Promise<stri
     throw error;
   }
 
-  const connections: string[] = [];
+  const connections: AuthoredConnectionModule[] = [];
   for (const entry of entries) {
     if (entry.isFile()) {
       const baseName = getSupportedModuleBaseName(entry.name);
-      if (baseName !== null) connections.push(baseName);
+      if (baseName !== null) {
+        connections.push({ filePath: join(connectionsDir, entry.name), slug: baseName });
+      }
       continue;
     }
     if (entry.isDirectory()) {
       try {
         const inner = await readdir(join(connectionsDir, entry.name));
-        if (inner.some((fileName) => matchesSupportedModuleBaseName(fileName, "connection"))) {
-          connections.push(entry.name);
+        const fileName = inner.find((candidate) =>
+          matchesSupportedModuleBaseName(candidate, "connection"),
+        );
+        if (fileName !== undefined) {
+          connections.push({
+            filePath: join(connectionsDir, entry.name, fileName),
+            slug: entry.name,
+          });
         }
       } catch {
         // Skip unreadable directories.
@@ -289,5 +325,24 @@ export async function listAuthoredConnections(projectRoot: string): Promise<stri
     }
   }
 
-  return connections.sort();
+  return connections.sort((a, b) => a.slug.localeCompare(b.slug));
+}
+
+/** Lists authored connection names under `agent/connections/` (file and folder form). */
+export async function listAuthoredConnections(projectRoot: string): Promise<string[]> {
+  return (await listAuthoredConnectionModules(projectRoot)).map((connection) => connection.slug);
+}
+
+/**
+ * Lists scaffolded Connect connections whose `connect("slug")` placeholder has
+ * not yet been replaced with a concrete connector UID.
+ */
+export async function listPendingConnectConnections(projectRoot: string): Promise<string[]> {
+  const modules = await listAuthoredConnectionModules(projectRoot);
+  const connectorUids = await Promise.all(
+    modules.map((connection) => readConnectionConnectorUid(connection.filePath)),
+  );
+  return modules
+    .filter((connection, index) => connectorUids[index] === connection.slug)
+    .map((connection) => connection.slug);
 }

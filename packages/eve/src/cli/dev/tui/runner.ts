@@ -222,18 +222,10 @@ export type AgentTUIRenderer = {
   /**
    * Out-of-band update for one MCP connection authorization lifecycle.
    * Called by the runner as `authorization.*` events arrive.
-   * The renderer renders this as a persistent body section per
-   * connection that transitions through `required` → `pending` →
-   * one of the terminal `ConnectionAuthorizationOutcome` states.
+   * The renderer owns both the persistent lifecycle headline and the
+   * interactive authorization panel.
    */
   upsertConnectionAuth?(update: ConnectionAuthUpdate): void;
-  /**
-   * Sets the number of connections currently awaiting an OAuth
-   * callback. The renderer overrides its bottom status bar with a
-   * "waiting for connection authorization" hint while this is > 0,
-   * so the user understands the agent is parked, not hung.
-   */
-  setConnectionAuthPendingCount?(count: number): void;
   /**
    * The log display mode currently in effect. Paired with
    * {@link setLogDisplayMode}; both are absent on renderers that do not
@@ -331,6 +323,8 @@ export type EveTUIRunnerOptions = TuiDisplayOptions & {
   initialInput?: string;
   /** Handles non-core slash commands without adding feature branches to the runner. */
   promptCommandHandler?: PromptCommandHandler;
+  /** Refreshes request identity immediately before each turn is dispatched. */
+  prepareTurn?: () => Promise<void>;
   /** Boot-time installation-state checks; defaults to the built-ins. */
   bootDetections?: readonly BootDetection[];
   /** Test seam for the status line's Vercel link probe; defaults to the real one. */
@@ -364,6 +358,7 @@ export class EveTUIRunner {
   /** Seeds the first prompt's editable buffer; consumed once in {@link #run}. */
   readonly #initialInput?: string;
   readonly #promptCommandHandler?: PromptCommandHandler;
+  readonly #prepareTurn?: () => Promise<void>;
   readonly #bootDetections: readonly BootDetection[];
   readonly #getVercelAuthStatus: typeof getVercelAuthStatus;
   /** Set when the run loop unwinds, so a late boot login probe cannot paint into a torn-down terminal. */
@@ -424,12 +419,6 @@ export class EveTUIRunner {
    */
   readonly #connectionAuthRuns = new Map<string, ConnectionAuthRun>();
   /**
-   * Set of connection names currently in the `pending` state — i.e.
-   * the workflow is suspended waiting on the framework-owned OAuth
-   * callback. Used to drive the renderer's bottom-bar hint.
-   */
-  readonly #pendingConnectionAuths = new Set<string>();
-  /**
    * Set when the active server session reaches a terminal failure — either a
    * `session.failed` stream event or a transport error dispatching the turn.
    * The run loop starts a fresh session before the next prompt so the user can
@@ -465,6 +454,7 @@ export class EveTUIRunner {
     if (options.promptCommandHandler !== undefined) {
       this.#promptCommandHandler = options.promptCommandHandler;
     }
+    if (options.prepareTurn !== undefined) this.#prepareTurn = options.prepareTurn;
     this.#bootDetections = options.bootDetections ?? BOOT_DETECTIONS;
     this.#getVercelAuthStatus = options.getVercelAuthStatus ?? getVercelAuthStatus;
     if (options.serverUrl !== undefined) {
@@ -748,7 +738,6 @@ export class EveTUIRunner {
     this.#subagentRuns.clear();
     this.#pendingInputRequests.clear();
     this.#connectionAuthRuns.clear();
-    this.#pendingConnectionAuths.clear();
 
     if (this.#client) {
       this.#session = this.#client.session();
@@ -836,6 +825,7 @@ export class EveTUIRunner {
 
     let response: Awaited<ReturnType<ClientSession["send"]>>;
     try {
+      await this.#prepareTurn?.();
       const client = this.#client;
       if (client !== undefined && this.#runtimeArtifacts !== undefined) {
         this.#session = await this.#runtimeArtifacts.refresh({
@@ -1071,9 +1061,7 @@ export class EveTUIRunner {
       run.reason = event.data.reason;
     }
     this.#connectionAuthRuns.set(event.data.name, run);
-    this.#pendingConnectionAuths.delete(event.data.name);
     this.#emitConnectionAuthUpdate(run);
-    this.#renderer.setConnectionAuthPendingCount?.(this.#pendingConnectionAuths.size);
   }
 
   #emitConnectionAuthUpdate(run: ConnectionAuthRun): void {
