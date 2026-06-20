@@ -2,6 +2,7 @@ import type { AgentDefinition, AgentBuildDefinition } from "#public/definitions/
 import type { ScheduleDefinition, ScheduleRunHandler } from "#public/definitions/schedule.js";
 import type { SkillDefinition, SkillFileContent } from "#public/definitions/skill.js";
 import type { InstructionsDefinition } from "#public/definitions/instructions.js";
+import type { MemoryDefinition } from "#public/definitions/memory.js";
 import {
   expectBoolean,
   expectFunction,
@@ -202,6 +203,33 @@ export function normalizeInstructionsDefinition(
   return {
     markdown: expectString(record.markdown, message),
   };
+}
+
+/**
+ * Normalizes one authored memory definition's markdown-derived shape into
+ * the canonical internal form.
+ *
+ * Used for the `memory.md` path, where the only fields a markdown file can
+ * supply are the orientation text (its markdown body) and an optional `root`
+ * override. Memory identity is path-derived (`memory.md` / `memory.{ts,...}`),
+ * so no `name` field is accepted. The `.ts` path carries `store`/handlers and
+ * is validated by its brand instead of this normalizer.
+ */
+export function normalizeMemoryDefinition(
+  value: unknown,
+  message: string,
+): MemoryDefinition & { readonly orientation: string } {
+  const record = expectObjectRecord(value, message);
+  expectOnlyKnownKeys(record, ["root", "orientation"], message);
+  const definition: { root?: string; orientation: string } = {
+    orientation: expectString(record.orientation, message),
+  };
+
+  if (record.root !== undefined) {
+    definition.root = expectString(record.root, message);
+  }
+
+  return definition;
 }
 
 /**

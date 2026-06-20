@@ -1,16 +1,21 @@
 import type { Dirent } from "node:fs";
 import { join } from "node:path";
 
-import type { ModuleSourceRef } from "#shared/source-ref.js";
+import type { MarkdownSourceRef, ModuleSourceRef } from "#shared/source-ref.js";
 import type { InstructionsDefinition } from "#public/definitions/instructions.js";
-import { lowerInstructionsMarkdown } from "#internal/helpers/markdown.js";
+import type { MemoryDefinition } from "#public/definitions/memory.js";
+import { lowerInstructionsMarkdown, lowerMemoryMarkdown } from "#internal/helpers/markdown.js";
 import {
   createDiscoverErrorDiagnostic,
   createDiscoverWarningDiagnostic,
   type DiscoverDiagnostic,
 } from "#discover/diagnostics.js";
 import { type DirectoryEntryType, getDirectoryEntryType } from "#discover/filesystem.js";
-import { type InstructionsSourceRef, createModuleSourceRef } from "#discover/manifest.js";
+import {
+  type InstructionsSourceRef,
+  type MemorySourceRef,
+  createModuleSourceRef,
+} from "#discover/manifest.js";
 import { discoverMarkdownSource } from "#discover/markdown.js";
 import { discoverNamedSourceDirectory } from "#discover/named-source-directory.js";
 import type { ProjectSource, ProjectSourceEntry } from "#discover/project-source.js";
@@ -82,6 +87,12 @@ export const DISCOVER_SANDBOX_DIRECTORY_INVALID = "discover/sandbox-directory-in
  * directory.
  */
 export const DISCOVER_INSTRUCTIONS_DIRECTORY_INVALID = "discover/instructions-directory-invalid";
+
+/**
+ * Shared diagnostic emitted when the authored `memory/` root is not a
+ * directory.
+ */
+export const DISCOVER_MEMORY_DIRECTORY_INVALID = "discover/memory-directory-invalid";
 
 /**
  * Shared diagnostic emitted when an authored `channels/**` filename or
@@ -272,7 +283,65 @@ export async function discoverInstructionsSource(input: {
   };
 }
 
-async function discoverSlotSource(input: {
+/**
+ * Discovers memory sources from a root directory.
+ *
+ * Mirrors {@link discoverInstructionsSource}'s flat-file + directory grammar
+ * (`agent/memory.{md,ts,...}` and/or `agent/memory/`), but memory is always
+ * optional: when no source is authored the result is empty and no diagnostic
+ * is emitted. There is no legacy-slot fallback. A flat file and a directory
+ * can coexist — the flat file appears first in the returned array.
+ */
+export async function discoverMemorySource(input: {
+  rootEntries: readonly ProjectSourceEntry[];
+  rootPath: string;
+  source: ProjectSource;
+}): Promise<{
+  diagnostics: DiscoverDiagnostic[];
+  memory: MemorySourceRef[];
+}> {
+  const hasDirectory = input.rootEntries.some((e) => e.name === "memory" && e.isDirectory());
+
+  const flatResult = await discoverSlotSource({
+    lowerMarkdown: lowerMemoryMarkdown,
+    markdownFileName: "memory.md",
+    moduleBaseName: "memory",
+    rootEntries: input.rootEntries,
+    rootPath: input.rootPath,
+    slotLabel: "memory",
+    source: input.source,
+  });
+
+  if (hasDirectory) {
+    const dirResult = await discoverNamedSourceDirectory<MemoryDefinition>({
+      allowMarkdown: true,
+      directoryName: "memory",
+      invalidDirectoryCode: DISCOVER_MEMORY_DIRECTORY_INVALID,
+      invalidDirectoryMessage: `Expected "${join(input.rootPath, "memory")}" to be a directory of authored memory.`,
+      markdownLowerer: (markdown) => lowerMemoryMarkdown(markdown),
+      recursive: false,
+      rootEntries: input.rootEntries,
+      rootPath: input.rootPath,
+      source: input.source,
+    });
+    const memory = [...dirResult.sources];
+    if (flatResult.source !== undefined) {
+      memory.unshift(flatResult.source);
+    }
+    return {
+      diagnostics: [...flatResult.diagnostics, ...dirResult.diagnostics],
+      memory,
+    };
+  }
+
+  return {
+    diagnostics: flatResult.diagnostics,
+    memory: flatResult.source !== undefined ? [flatResult.source] : [],
+  };
+}
+
+async function discoverSlotSource<TDefinition = InstructionsDefinition>(input: {
+  lowerMarkdown?: (markdown: string) => TDefinition;
   markdownFileName: string;
   moduleBaseName: string;
   rootEntries: readonly ProjectSourceEntry[];
@@ -281,7 +350,7 @@ async function discoverSlotSource(input: {
   source: ProjectSource;
 }): Promise<{
   diagnostics: DiscoverDiagnostic[];
-  source?: InstructionsSourceRef;
+  source?: MarkdownSourceRef<TDefinition> | ModuleSourceRef;
 }> {
   const candidates = collectFlatSlotCandidates(input.rootEntries, {
     markdownFileName: input.markdownFileName,
@@ -312,11 +381,13 @@ async function discoverSlotSource(input: {
   }
 
   if (candidates.markdownFileName !== undefined) {
+    const lower =
+      input.lowerMarkdown ?? (lowerInstructionsMarkdown as (markdown: string) => TDefinition);
     return {
       diagnostics: [],
-      source: await discoverMarkdownSource({
+      source: await discoverMarkdownSource<TDefinition>({
         logicalPath: input.markdownFileName,
-        lower: lowerInstructionsMarkdown,
+        lower,
         source: input.source,
         sourcePath: join(input.rootPath, candidates.markdownFileName),
       }),

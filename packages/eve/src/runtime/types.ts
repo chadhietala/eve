@@ -54,6 +54,25 @@ export type ResolvedInstructions = Readonly<
 >;
 
 /**
+ * Authored memory layer resolved from `memory.md` or `memory.{ts,...}`.
+ *
+ * Carries the durable projection — the mount `root` and optional orientation
+ * text — plus presence flags for the author-supplied store and escape-hatch
+ * handlers. The live store and handler functions resolved from the module map
+ * are wired in by memory-config seeding at turn time; they are not held on the
+ * resolved agent.
+ */
+export type ResolvedMemory = Readonly<
+  SourceRef & {
+    name: string;
+    root: string;
+    orientation?: string;
+    hasStore: boolean;
+    handlerNames: readonly ("onRead" | "onWrite" | "onList" | "onGrep")[];
+  } & (Omit<MarkdownSourceRef<undefined>, "definition"> | ModuleSourceRef)
+>;
+
+/**
  * Runtime-owned skill metadata resolved from markdown, TypeScript, or a skill
  * package manifest entry.
  */
@@ -397,6 +416,11 @@ export interface ResolvedAgent {
    * declare one.
    */
   readonly instructions?: ResolvedInstructions;
+  /**
+   * Authored memory layer resolved from `memory.md` or `memory.{ts,...}`,
+   * or `undefined` when the agent does not declare one.
+   */
+  readonly memory?: ResolvedMemory;
   /**
    * Authored sandbox override for this agent, when one exists. `null`
    * means the agent uses the framework default sandbox unchanged.

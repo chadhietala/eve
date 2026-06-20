@@ -38,6 +38,9 @@ export type AgentRootEntryKind =
   | "instructions-markdown"
   | "instructions-module"
   | "lib-directory"
+  | "memory-directory"
+  | "memory-markdown"
+  | "memory-module"
   | "sandbox-directory"
   | "schedules-directory"
   | "skills-directory"
@@ -59,6 +62,9 @@ export type LocalSubagentEntryKind =
   | "instructions-module"
   | "invalid-schedules-directory"
   | "lib-directory"
+  | "memory-directory"
+  | "memory-markdown"
+  | "memory-module"
   | "sandbox-directory"
   | "skills-directory"
   | "system-markdown"
@@ -130,6 +136,14 @@ export function classifyAgentRootEntry(
       return "instructions-module";
     }
 
+    if (name.toLowerCase() === "memory.md") {
+      return "memory-markdown";
+    }
+
+    if (matchesSupportedModuleBaseName(name, "memory")) {
+      return "memory-module";
+    }
+
     if (name.toLowerCase() === "system.md") {
       return "system-markdown";
     }
@@ -156,6 +170,10 @@ export function classifyAgentRootEntry(
 
     if (name === "instructions") {
       return "instructions-directory";
+    }
+
+    if (name === "memory") {
+      return "memory-directory";
     }
 
     if (name === "lib") {
@@ -206,6 +224,14 @@ export function classifyLocalSubagentEntry(
       return "instructions-module";
     }
 
+    if (name.toLowerCase() === "memory.md") {
+      return "memory-markdown";
+    }
+
+    if (matchesSupportedModuleBaseName(name, "memory")) {
+      return "memory-module";
+    }
+
     if (name.toLowerCase() === "system.md") {
       return "system-markdown";
     }
@@ -228,6 +254,10 @@ export function classifyLocalSubagentEntry(
 
     if (name === "instructions") {
       return "instructions-directory";
+    }
+
+    if (name === "memory") {
+      return "memory-directory";
     }
 
     if (name === "lib") {

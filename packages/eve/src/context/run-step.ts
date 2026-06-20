@@ -4,6 +4,7 @@ import type { FrameworkContextProvider } from "#context/provider.js";
 import { connectionProvider } from "#context/providers/connection.js";
 import { sandboxProvider } from "#context/providers/sandbox.js";
 import { sessionProvider } from "#context/providers/session.js";
+import { seedMemoryConfig } from "#context/seed-memory-config.js";
 
 /**
  * Framework providers in dependency order.
@@ -38,6 +39,11 @@ export async function withContextScope<T>(
   let session = harnessSession;
 
   ctx.clearVirtualContext();
+
+  // MemoryConfigKey is codec-less and transient — rebuild it from the
+  // compiled memory definition on every step rather than carrying it across
+  // step boundaries.
+  await seedMemoryConfig(ctx, session);
 
   for (const provider of frameworkProviders) {
     const result = await provider.create(ctx, session);

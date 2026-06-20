@@ -6,6 +6,7 @@ import {
   setReadFileStamp,
 } from "#runtime/framework-tools/file-state.js";
 import { validateAbsoluteFilePath } from "#execution/sandbox/require-sandbox.js";
+import { memoryRead, shouldRedirectToMemory } from "#execution/sandbox/memory-redirect.js";
 import type { SandboxSession } from "#shared/sandbox-session.js";
 import { capLineLength, MAX_OUTPUT_BYTES } from "#execution/sandbox/truncate-output.js";
 
@@ -70,7 +71,11 @@ export async function executeReadFileOnSandbox(
   }
 
   // ── Read full file for fingerprinting ───────────────────────────────
-  const rawContent = await sandbox.readTextFile({ path: filePath });
+  // Paths under the configured memory root are served from the memory store
+  // instead of the sandbox; everything else falls through unchanged.
+  const rawContent = shouldRedirectToMemory(normalizedPath)
+    ? await memoryRead(normalizedPath)
+    : await sandbox.readTextFile({ path: filePath });
 
   if (rawContent === null) {
     throw new Error(

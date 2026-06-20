@@ -39,7 +39,7 @@ export const ROOT_COMPILED_AGENT_NODE_ID = "__root__";
 /**
  * Current compiled manifest schema version.
  */
-export const COMPILED_AGENT_MANIFEST_VERSION = 29;
+export const COMPILED_AGENT_MANIFEST_VERSION = 31;
 
 /**
  * Compiled channel entry preserved in the compiled manifest.
@@ -119,6 +119,19 @@ export type CompiledAgentDefinition = Omit<InternalAgentDefinition, "model" | "c
  * manifest.
  */
 export type CompiledInstructions = z.infer<typeof compiledInstructionsSchema>;
+
+/**
+ * Normalized authored memory layer preserved in the compiled manifest.
+ *
+ * Serializable projection of a {@link MemoryDefinition}: the mount `root`,
+ * the optional `orientation` text, and — for the `memory.{ts,...}` form — presence
+ * flags recording whether the author supplied a custom `store` or any of the
+ * `onRead`/`onWrite`/`onList`/`onGrep` escape hatches. The live store and
+ * handler functions are not serialized; they are resolved from the module
+ * map at runtime via {@link ModuleSourceRef.logicalPath}, mirroring how
+ * tools and connections resolve their authored modules.
+ */
+export type CompiledMemory = z.infer<typeof compiledMemorySchema>;
 
 /**
  * Normalized authored skill preserved in the compiled manifest.
@@ -348,6 +361,31 @@ const compiledInstructionsSchema = z
   })
   .strict();
 
+const compiledMemorySchema = z
+  .object({
+    name: z.string(),
+    logicalPath: z.string(),
+    /** Absolute POSIX mount root the file tools redirect under. */
+    root: z.string(),
+    /**
+     * Read-only orientation text injected as a system pointer (like
+     * instructions), not a file under the mount.
+     */
+    orientation: z.string().optional(),
+    /** Whether the author supplied a custom backing store (`.ts` form only). */
+    hasStore: z.boolean(),
+    /**
+     * Names of the author-supplied escape-hatch handlers present on the
+     * `defineMemory` export. Empty for the markdown form. The live functions
+     * resolve from the module map at runtime.
+     */
+    handlerNames: z.array(z.enum(["onRead", "onWrite", "onList", "onGrep"])).readonly(),
+    exportName: z.string().optional(),
+    sourceId: z.string(),
+    sourceKind: z.union([z.literal("markdown"), z.literal("module")]),
+  })
+  .strict();
+
 const compiledSkillBaseFields = {
   name: z.string(),
   description: z.string(),
@@ -555,6 +593,7 @@ const compiledAgentNodeManifestSchema = z
     remoteAgents: z.array(compiledRemoteAgentNodeSchema),
     skills: z.array(compiledSkillSourceSchema).readonly(),
     instructions: compiledInstructionsSchema.optional(),
+    memory: compiledMemorySchema.optional(),
     tools: z.array(compiledToolDefinitionSchema),
     workspaceResourceRoot: compiledWorkspaceResourceRootSchema,
   })
@@ -608,6 +647,7 @@ export const compiledAgentManifestSchema = z
     subagentEdges: z.array(compiledSubagentEdgeSchema),
     subagents: z.array(compiledSubagentNodeSchema),
     instructions: compiledInstructionsSchema.optional(),
+    memory: compiledMemorySchema.optional(),
     tools: z.array(compiledToolDefinitionSchema),
     version: z.literal(COMPILED_AGENT_MANIFEST_VERSION),
     workspaceResourceRoot: compiledWorkspaceResourceRootSchema,
@@ -636,6 +676,7 @@ export function createCompiledAgentNodeManifest(input: {
   readonly schedules?: readonly CompiledScheduleDefinition[];
   readonly skills?: readonly CompiledSkillDefinition[];
   readonly instructions?: CompiledInstructions;
+  readonly memory?: CompiledMemory;
   readonly tools?: readonly CompiledToolDefinition[];
   readonly workspaceResourceRoot?: CompiledWorkspaceResourceRoot;
 }): CompiledAgentNodeManifest {
@@ -705,6 +746,10 @@ export function createCompiledAgentNodeManifest(input: {
     node.instructions = input.instructions;
   }
 
+  if (input.memory !== undefined) {
+    node.memory = input.memory;
+  }
+
   return node;
 }
 
@@ -770,6 +815,7 @@ export function createCompiledAgentManifest(input: {
   readonly subagentEdges?: readonly CompiledSubagentEdge[];
   readonly subagents?: readonly CompiledSubagentNode[];
   readonly instructions?: CompiledInstructions;
+  readonly memory?: CompiledMemory;
   readonly tools?: readonly CompiledToolDefinition[];
 }): CompiledAgentManifest {
   return {

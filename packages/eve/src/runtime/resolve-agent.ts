@@ -1,4 +1,8 @@
-import type { CompiledAgentNodeManifest, CompiledInstructions } from "#compiler/manifest.js";
+import type {
+  CompiledAgentNodeManifest,
+  CompiledInstructions,
+  CompiledMemory,
+} from "#compiler/manifest.js";
 import type { CompiledModuleMap } from "#compiler/module-map.js";
 import { resolveChannelDefinition } from "#runtime/resolve-channel.js";
 
@@ -20,6 +24,7 @@ import type {
   ResolvedChannelDefinition,
   ResolvedSkillDefinition,
   ResolvedInstructions,
+  ResolvedMemory,
 } from "#runtime/types.js";
 
 /**
@@ -97,6 +102,7 @@ export async function resolveAgent(input: ResolveAgentInput): Promise<ResolvedAg
       ? null
       : await resolveSandboxDefinition(input.manifest.sandbox, input.moduleMap, input.nodeId);
   const instructions = createResolvedInstructions(input.manifest.instructions);
+  const memory = createResolvedMemory(input.manifest.memory);
   const workspaceResourceRoot = input.manifest.workspaceResourceRoot;
   const resolvedAgent: ResolvedAgent = {
     channels: resolvedChannels,
@@ -121,11 +127,45 @@ export async function resolveAgent(input: ResolveAgentInput): Promise<ResolvedAg
     workspaceSpec: { rootEntries: [...workspaceResourceRoot.rootEntries] },
   };
 
-  if (instructions !== undefined) {
-    return { ...resolvedAgent, instructions };
+  const withInstructions =
+    instructions !== undefined ? { ...resolvedAgent, instructions } : resolvedAgent;
+
+  if (memory !== undefined) {
+    return { ...withInstructions, memory };
   }
 
-  return resolvedAgent;
+  return withInstructions;
+}
+
+function createResolvedMemory(memory: CompiledMemory | undefined): ResolvedMemory | undefined {
+  if (memory === undefined) {
+    return undefined;
+  }
+
+  const base: {
+    name: string;
+    logicalPath: string;
+    root: string;
+    hasStore: boolean;
+    handlerNames: ResolvedMemory["handlerNames"];
+    sourceId: string;
+    orientation?: string;
+  } = {
+    name: memory.name,
+    logicalPath: memory.logicalPath,
+    root: memory.root,
+    hasStore: memory.hasStore,
+    handlerNames: [...memory.handlerNames],
+    sourceId: memory.sourceId,
+  };
+
+  if (memory.orientation !== undefined) {
+    base.orientation = memory.orientation;
+  }
+
+  return memory.sourceKind === "markdown"
+    ? { ...base, sourceKind: "markdown" }
+    : { ...base, sourceKind: "module" };
 }
 
 function createResolvedInstructions(

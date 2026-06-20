@@ -14,6 +14,7 @@ import {
   DISCOVER_TOOLS_DIRECTORY_INVALID,
   discoverFlatModuleSource,
   discoverInstructionsSource,
+  discoverMemorySource,
   discoverNamedSourceDirectory,
   readSortedDirectoryEntries,
 } from "#discover/grammar.js";
@@ -80,6 +81,13 @@ export async function discoverAgent(input: DiscoverAgentInput): Promise<Discover
     source,
   });
   diagnostics.push(...instructionsResult.diagnostics);
+
+  const memoryResult = await discoverMemorySource({
+    rootEntries,
+    rootPath: agentRoot,
+    source,
+  });
+  diagnostics.push(...memoryResult.diagnostics);
 
   const configModuleResult = discoverFlatModuleSource({
     rootEntries,
@@ -175,6 +183,7 @@ export async function discoverAgent(input: DiscoverAgentInput): Promise<Discover
     hooks: hooksResult.sources,
     lib: libResult.lib,
     instructions: instructionsResult.instructions,
+    memory: memoryResult.memory,
     sandbox: sandboxResult.sandbox,
     sandboxWorkspaces:
       sandboxResult.sandboxWorkspace === null ? [] : [sandboxResult.sandboxWorkspace],

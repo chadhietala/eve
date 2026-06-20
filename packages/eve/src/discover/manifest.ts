@@ -8,6 +8,7 @@ import type { NamedSkillDefinition } from "#shared/skill-definition.js";
 import type { ScheduleDefinition } from "#public/definitions/schedule.js";
 import type { SkillDefinition } from "#public/definitions/skill.js";
 import type { InstructionsDefinition } from "#public/definitions/instructions.js";
+import type { MemoryDefinition } from "#public/definitions/memory.js";
 import type { DiscoverDiagnostic, DiscoverDiagnosticsSummary } from "#discover/diagnostics.js";
 import { summarizeDiscoverDiagnostics } from "#discover/diagnostics.js";
 import { normalizeLogicalPath } from "#discover/filesystem.js";
@@ -20,7 +21,7 @@ export const AGENT_SOURCE_MANIFEST_KIND = "eve-agent-discovery-manifest";
 /**
  * Current manifest schema version.
  */
-export const AGENT_SOURCE_MANIFEST_VERSION = 12;
+export const AGENT_SOURCE_MANIFEST_VERSION = 13;
 
 /**
  * Channel source reference preserved by the discovery manifest.
@@ -47,6 +48,14 @@ export interface ConnectionSourceRef extends ModuleSourceRef {
  * normalization.
  */
 export type InstructionsSourceRef = MarkdownSourceRef<InstructionsDefinition> | ModuleSourceRef;
+
+/**
+ * Memory source reference preserved by discovery for compiler
+ * normalization. A `memory.md` lowers to a {@link MemoryDefinition} carrying
+ * the markdown body as its seed; a `memory.{ts,...}` is a module reference
+ * resolved (and brand-checked) at compile time.
+ */
+export type MemorySourceRef = MarkdownSourceRef<MemoryDefinition> | ModuleSourceRef;
 
 /**
  * Skill source reference preserved by the discovery manifest.
@@ -158,6 +167,15 @@ export interface AgentSourceManifest {
    */
   instructions: InstructionsSourceRef[];
   /**
+   * Authored memory sources discovered at the agent root.
+   *
+   * Supports a flat file (`memory.md` or `memory.{ts,...}`) and a `memory/`
+   * directory, mirroring instructions. Memory is optional — this array is
+   * empty when no memory is authored, and discovery emits no diagnostic for
+   * its absence.
+   */
+  memory: MemorySourceRef[];
+  /**
    * Authored sandbox module discovered for this agent, or `null` when
    * the agent does not declare one. Every agent owns at most one
    * sandbox.
@@ -197,6 +215,7 @@ export interface CreateAgentSourceManifestInput {
    */
   packageName?: string;
   instructions?: readonly InstructionsSourceRef[];
+  memory?: readonly MemorySourceRef[];
   sandbox?: SandboxSourceRef | null;
   sandboxWorkspaces?: readonly SandboxWorkspaceFolderSourceRef[];
   schedules?: readonly ScheduleSourceRef[];
@@ -262,6 +281,7 @@ export function createAgentSourceManifest(
     diagnosticsSummary: summarizeDiscoverDiagnostics(input.diagnostics ?? []),
     hooks: [...(input.hooks ?? [])],
     instructions: [...(input.instructions ?? [])],
+    memory: [...(input.memory ?? [])],
     lib: [...(input.lib ?? [])],
     kind: AGENT_SOURCE_MANIFEST_KIND,
     sandbox: input.sandbox ?? null,

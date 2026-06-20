@@ -4,11 +4,13 @@ import {
   normalizeScheduleDefinition,
   normalizeSkillDefinition,
   normalizeInstructionsDefinition,
+  normalizeMemoryDefinition,
 } from "#internal/authored-definition/core.js";
 import { isObject } from "#shared/guards.js";
 import { defineSchedule, type ScheduleDefinition } from "#public/definitions/schedule.js";
 import { defineSkill, type SkillDefinition } from "#public/definitions/skill.js";
 import type { InstructionsDefinition } from "#public/definitions/instructions.js";
+import type { MemoryDefinition } from "#public/definitions/memory.js";
 
 const CLOSED_FRONTMATTER_PATTERN = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/;
 
@@ -99,6 +101,20 @@ export function lowerInstructionsMarkdown(markdown: string): InstructionsDefinit
   return normalizeInstructionsDefinition(
     { markdown },
     "Expected authored instructions markdown to match the public eve shape.",
+  );
+}
+
+/**
+ * Lowers authored memory markdown into the shared public definition shape.
+ *
+ * The markdown body becomes the memory {@link MemoryDefinition.orientation};
+ * the `.md` form carries no store or handlers. Memory identity is
+ * path-derived, so the lowered definition never carries a `name`.
+ */
+export function lowerMemoryMarkdown(markdown: string): MemoryDefinition {
+  return normalizeMemoryDefinition(
+    { orientation: markdown },
+    "Expected authored memory markdown to match the public eve shape.",
   );
 }
 

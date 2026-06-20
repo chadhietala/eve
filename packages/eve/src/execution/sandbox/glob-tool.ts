@@ -1,5 +1,6 @@
 import { normalizeModelPath } from "#runtime/framework-tools/file-state.js";
 import { validateAbsoluteFilePath } from "#execution/sandbox/require-sandbox.js";
+import { memoryList, shouldRedirectToMemory } from "#execution/sandbox/memory-redirect.js";
 import type { SandboxSession } from "#shared/sandbox-session.js";
 import { ripgrepIsAvailable } from "#execution/sandbox/ripgrep-probe.js";
 import { shellQuote } from "#execution/sandbox/shell-quote.js";
@@ -54,6 +55,16 @@ export async function executeGlobOnSandbox(
   const normalizedPath = normalizeModelPath(effectivePath);
   const effectiveLimit = Math.min(Math.max(1, args.limit ?? DEFAULT_GLOB_LIMIT), MAX_GLOB_LIMIT);
 
+  // Paths under the configured memory root glob the memory store instead of
+  // the sandbox: list entries under the root and match each against the
+  // pattern in process, then format with the shared result builder.
+  if (shouldRedirectToMemory(normalizedPath)) {
+    const all = await memoryList(normalizedPath);
+    const matcher = globToRegExp(args.pattern);
+    const rawLines = all.filter((path) => matcher.test(path));
+    return formatGlobResult({ effectiveLimit, normalizedPath, rawLines });
+  }
+
   const command = (await ripgrepIsAvailable(sandbox))
     ? buildRipgrepCommand({ normalizedPath, pattern: args.pattern })
     : buildPosixFindCommand({ normalizedPath, pattern: args.pattern });
@@ -74,6 +85,27 @@ export async function executeGlobOnSandbox(
 
   // Parse stdout into file paths.
   const rawLines = result.stdout.split("\n").filter((line) => line.length > 0);
+
+  return formatGlobResult({ effectiveLimit, normalizedPath, rawLines });
+}
+
+// ---------------------------------------------------------------------------
+// Result formatting
+// ---------------------------------------------------------------------------
+
+interface FormatGlobResultInput {
+  readonly effectiveLimit: number;
+  readonly normalizedPath: string;
+  readonly rawLines: readonly string[];
+}
+
+/**
+ * Normalizes matched paths, enforces the count and byte caps, and shapes the
+ * model-facing {@link GlobResult}. Shared by the sandbox and memory paths so
+ * both produce byte-for-byte identical output.
+ */
+function formatGlobResult(input: FormatGlobResultInput): GlobResult {
+  const { effectiveLimit, normalizedPath, rawLines } = input;
 
   // Detect truncation: if we got more lines than the limit, the tool had more results.
   const truncatedByCount = rawLines.length > effectiveLimit;
@@ -187,6 +219,38 @@ function buildPosixFindCommand(input: BuildCommandInput): string {
 //     depth". When the rest of the pattern has no directory
 //     component we return just the basename, letting the caller use
 //     `-name` for efficiency.
+/**
+ * Compiles a glob pattern into a {@link RegExp} matched against full paths,
+ * for the memory redirect (which has no `rg`/`find` binary). Supports `**`
+ * (any depth, crossing `/`), `*` (within a segment), and `?` (one non-slash
+ * char). A pattern with no `/` matches by basename at any depth, mirroring
+ * the sandbox glob's basename semantics.
+ */
+function globToRegExp(pattern: string): RegExp {
+  const anchored = pattern.includes("/") ? pattern : `**/${pattern}`;
+  let out = "";
+  for (let i = 0; i < anchored.length; i += 1) {
+    const ch = anchored[i] ?? "";
+    if (ch === "*") {
+      if (anchored[i + 1] === "*") {
+        out += ".*";
+        i += 1;
+        // Swallow a `/` immediately following `**` so `**/x` also matches `x`.
+        if (anchored[i + 1] === "/") {
+          i += 1;
+        }
+      } else {
+        out += "[^/]*";
+      }
+    } else if (ch === "?") {
+      out += "[^/]";
+    } else {
+      out += ch.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    }
+  }
+  return new RegExp(`(^|/)${out}$`);
+}
+
 function translateGlobToFindPattern(pattern: string): string {
   // Collapse `**` to `*` since find's `*` already crosses `/`.
   let translated = pattern.replaceAll("**", "*");

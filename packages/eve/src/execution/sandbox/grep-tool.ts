@@ -1,5 +1,6 @@
 import { normalizeModelPath } from "#runtime/framework-tools/file-state.js";
 import { validateAbsoluteFilePath } from "#execution/sandbox/require-sandbox.js";
+import { memoryGrep, shouldRedirectToMemory } from "#execution/sandbox/memory-redirect.js";
 import type { SandboxSession } from "#shared/sandbox-session.js";
 import { ripgrepIsAvailable } from "#execution/sandbox/ripgrep-probe.js";
 import { shellQuote } from "#execution/sandbox/shell-quote.js";
@@ -58,6 +59,32 @@ export async function executeGrepOnSandbox(
   const normalizedPath = normalizeModelPath(effectivePath);
   const effectiveLimit = Math.min(Math.max(1, args.limit ?? DEFAULT_GREP_LIMIT), MAX_GREP_LIMIT);
   const contextLines = args.context !== undefined && args.context > 0 ? args.context : 0;
+
+  // Paths under the configured memory root search the memory store instead of
+  // the sandbox. The store has no `rg`/`grep` binary, so we list-read-match in
+  // process and format the hits as `file:linenum:text` so output parsing is
+  // shared with the sandbox path.
+  if (shouldRedirectToMemory(normalizedPath)) {
+    const hits = await memoryGrep({
+      ignoreCase: args.ignoreCase ?? false,
+      limit: effectiveLimit,
+      literal: args.literal ?? false,
+      pattern: args.pattern,
+      prefix: normalizedPath,
+    });
+
+    if (hits.length === 0) {
+      return {
+        content: "No matches found",
+        matchCount: 0,
+        path: normalizedPath,
+        truncated: false,
+      };
+    }
+
+    const stdout = hits.map((hit) => `${hit.path}:${hit.lineNumber}:${hit.line}`).join("\n");
+    return processOutput({ effectiveLimit, normalizedPath, stdout });
+  }
 
   const command = (await ripgrepIsAvailable(sandbox))
     ? buildRipgrepCommand({
