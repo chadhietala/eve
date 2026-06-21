@@ -128,7 +128,7 @@ describe("routing to the right store", () => {
     });
 
     // The bytes land in the curated namespace at the store-relative path.
-    const curated = resolveStoreNamespace("notes");
+    const curated = resolveStoreNamespace();
     const bytes = await store.backend.read(curated, "a.md");
     expect(bytes).not.toBeNull();
     expect(new TextDecoder().decode(bytes as Uint8Array)).toBe("hello");
@@ -154,8 +154,8 @@ describe("routing to the right store", () => {
       expect(await memoryRead("/mnt/memory/notes/inner/a.md")).toBe("deep");
     });
 
-    expect(await inner.backend.read(resolveStoreNamespace("inner"), "a.md")).not.toBeNull();
-    expect(await notes.backend.read(resolveStoreNamespace("notes"), "inner/a.md")).toBeNull();
+    expect(await inner.backend.read(resolveStoreNamespace(), "a.md")).not.toBeNull();
+    expect(await notes.backend.read(resolveStoreNamespace(), "inner/a.md")).toBeNull();
   });
 });
 
@@ -166,13 +166,13 @@ describe("access enforcement", () => {
       await expect(memoryWrite("/mnt/memory/facts/a.md", "x")).rejects.toThrow(/read-only/);
     });
     // Nothing was written.
-    expect(await store.backend.read(resolveStoreNamespace("facts"), "a.md")).toBeNull();
+    expect(await store.backend.read(resolveStoreNamespace(), "a.md")).toBeNull();
   });
 
   it("still allows reads from a read-only store", async () => {
     const store = mountStore({ name: "facts", access: "ro" });
     await store.backend.write(
-      resolveStoreNamespace("facts"),
+      resolveStoreNamespace(),
       "a.md",
       new TextEncoder().encode("seeded"),
       "k1",
@@ -200,7 +200,7 @@ describe("transcripts are unreachable through the mount", () => {
     const store = mountStore({ name: "notes" });
     // Write a transcript into the off-mount transcripts namespace directly.
     await store.backend.write(
-      resolveTranscriptsNamespace("notes"),
+      resolveTranscriptsNamespace(),
       "transcripts/s1.jsonl",
       new TextEncoder().encode("{}"),
       "k1",
@@ -248,7 +248,7 @@ describe("transparent compare-and-swap on write", () => {
     await withMemory(makeConfig([store]), async () => {
       await memoryWrite("/mnt/memory/notes/a.md", "hello");
     });
-    const versions = await store.backend.listVersions(resolveStoreNamespace("notes"), "a.md");
+    const versions = await store.backend.listVersions(resolveStoreNamespace(), "a.md");
     expect(versions.map((v) => v.version)).toEqual([sha256("hello")]);
   });
 
@@ -263,7 +263,7 @@ describe("transparent compare-and-swap on write", () => {
     });
 
     expect(racing.conflictsInjected).toBe(1);
-    const ns = resolveStoreNamespace("notes");
+    const ns = resolveStoreNamespace();
     // The model's content won the head (conflict-aware last-write-wins).
     expect(new TextDecoder().decode((await racing.read(ns, "a.md")) as Uint8Array)).toBe(
       "model-output",
@@ -293,6 +293,6 @@ describe("transparent compare-and-swap on write", () => {
     await withMemory(makeConfig([store]), async () => {
       await expect(memoryWrite("/mnt/memory/facts/a.md", "x")).rejects.toThrow(/read-only/);
     });
-    expect(await store.backend.listVersions(resolveStoreNamespace("facts"), "a.md")).toEqual([]);
+    expect(await store.backend.listVersions(resolveStoreNamespace(), "a.md")).toEqual([]);
   });
 });

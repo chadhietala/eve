@@ -24,12 +24,12 @@ const AGENT_ID = "agent-1";
 const ROOT = "/mnt/memory";
 const STORE = "notes";
 
-const CURATED_NS = resolveStoreNamespace(STORE);
-const TRANSCRIPTS_NS = resolveTranscriptsNamespace(STORE);
+const CURATED_NS = resolveStoreNamespace();
+const TRANSCRIPTS_NS = resolveTranscriptsNamespace();
 
 const STORE_B = "facts";
-const CURATED_NS_B = resolveStoreNamespace(STORE_B);
-const TRANSCRIPTS_NS_B = resolveTranscriptsNamespace(STORE_B);
+const CURATED_NS_B = resolveStoreNamespace();
+const TRANSCRIPTS_NS_B = resolveTranscriptsNamespace();
 
 async function seedTranscriptsFor(
   backend: InMemoryMemoryStore,

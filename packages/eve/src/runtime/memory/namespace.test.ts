@@ -2,36 +2,31 @@ import { describe, expect, it } from "vitest";
 import { resolveStoreNamespace, resolveTranscriptsNamespace } from "#runtime/memory/namespace.js";
 
 describe("resolveStoreNamespace", () => {
-  it("keys the curated namespace on the store name, not an agent id", () => {
-    const ns = resolveStoreNamespace("notes");
-    expect(ns).toEqual({
-      agentId: "notes",
-      scopeId: "notes",
-      scopeType: "store",
-    });
-  });
-
-  it("resolves the same partition for two agents pointing at the same store", () => {
-    expect(resolveStoreNamespace("shared")).toEqual(resolveStoreNamespace("shared"));
+  it("resolves a constant curated namespace independent of any name", () => {
+    const ns = resolveStoreNamespace();
+    expect(ns.scopeType).toBe("store");
+    // The partition within a backend is fixed: the backend instance is the
+    // identity, so no name/agent id may leak into the namespace.
+    expect(ns).toEqual(resolveStoreNamespace());
   });
 });
 
 describe("resolveTranscriptsNamespace", () => {
-  it("keys the transcripts namespace on the store name under the transcripts scope", () => {
-    const ns = resolveTranscriptsNamespace("notes");
-    expect(ns).toEqual({
-      agentId: "notes",
-      scopeId: "notes",
-      scopeType: "transcripts",
-    });
+  it("resolves a constant transcripts namespace under the transcripts scope", () => {
+    const ns = resolveTranscriptsNamespace();
+    expect(ns.scopeType).toBe("transcripts");
+    expect(ns).toEqual(resolveTranscriptsNamespace());
   });
 });
 
 describe("store vs transcripts namespaces", () => {
-  it("differ in scopeType for the same store so dumps never collide with curated memory", () => {
-    const curated = resolveStoreNamespace("notes");
-    const transcripts = resolveTranscriptsNamespace("notes");
+  it("differ only in scopeType so dumps never collide with curated memory", () => {
+    const curated = resolveStoreNamespace();
+    const transcripts = resolveTranscriptsNamespace();
+    // Same backend, two areas: distinguished purely by scopeType (curated vs.
+    // raw transcripts), never by name — sharing is by backend identity.
     expect(curated.scopeType).not.toBe(transcripts.scopeType);
+    expect(curated.agentId).toBe(transcripts.agentId);
     expect(curated.scopeId).toBe(transcripts.scopeId);
   });
 });

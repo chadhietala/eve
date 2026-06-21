@@ -235,7 +235,7 @@ const decoder = new TextDecoder();
 async function readMemoryIndexes(config: MemoryConfig): Promise<string | undefined> {
   const sections: string[] = [];
   for (const store of config.stores) {
-    const ns = resolveStoreNamespace(store.name);
+    const ns = resolveStoreNamespace();
     const bytes = await store.backend.read(ns, MEMORY_INDEX_PATH);
     if (bytes === null) {
       continue;

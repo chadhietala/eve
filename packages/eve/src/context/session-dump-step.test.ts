@@ -56,13 +56,13 @@ describe("maybeDumpSession", () => {
     await withMemory(makeConfig([notes, facts]), (ctx) => maybeDumpSession(ctx, session));
 
     for (const store of [notes, facts]) {
-      const ns = resolveTranscriptsNamespace(store.name);
+      const ns = resolveTranscriptsNamespace();
       const stored = decode(await store.backend.read(ns, "transcripts/session-42.jsonl"));
       expect(stored).not.toBeNull();
       expect(JSON.parse(stored!)).toEqual({ role: "user", content: "hi" });
 
       // Never in the curated (mounted) namespace.
-      expect(await store.backend.list(resolveStoreNamespace(store.name), "")).toEqual([]);
+      expect(await store.backend.list(resolveStoreNamespace(), "")).toEqual([]);
     }
   });
 
@@ -73,9 +73,9 @@ describe("maybeDumpSession", () => {
 
     await withMemory(makeConfig([rw, ro]), (ctx) => maybeDumpSession(ctx, session));
 
-    expect(await ro.backend.list(resolveTranscriptsNamespace("facts"), "")).toEqual([]);
+    expect(await ro.backend.list(resolveTranscriptsNamespace(), "")).toEqual([]);
     expect(
-      await rw.backend.read(resolveTranscriptsNamespace("notes"), "transcripts/session-42.jsonl"),
+      await rw.backend.read(resolveTranscriptsNamespace(), "transcripts/session-42.jsonl"),
     ).not.toBeNull();
   });
 
@@ -85,6 +85,6 @@ describe("maybeDumpSession", () => {
 
     await withMemory(undefined, (ctx) => maybeDumpSession(ctx, session));
 
-    expect(await store.list(resolveTranscriptsNamespace("notes"), "")).toEqual([]);
+    expect(await store.list(resolveTranscriptsNamespace(), "")).toEqual([]);
   });
 });

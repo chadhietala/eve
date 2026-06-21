@@ -57,7 +57,7 @@ export async function countSessionTranscripts(config: MemoryConfig): Promise<num
     if (store.access !== "rw") {
       continue;
     }
-    const ns = resolveTranscriptsNamespace(store.name);
+    const ns = resolveTranscriptsNamespace();
     const entries = await store.backend.list(ns, TRANSCRIPTS_PREFIX);
     for (const entry of entries) {
       if (entry.path.startsWith(TRANSCRIPTS_PREFIX) && entry.path.endsWith(TRANSCRIPT_SUFFIX)) {

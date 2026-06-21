@@ -18,14 +18,15 @@ import type { MemoryStore } from "#runtime/memory/store.js";
 /**
  * One resolved store mounted into the turn's memory filesystem.
  *
- * `backend` is the live store; `mountPath` is its absolute mount under the
- * memory root (e.g. `/mnt/memory/notes`); `access` gates writes through the
- * mount. The store's curated and transcripts namespaces are derived from `name`
- * at use time (they key on the store name, not the agent), so they are not held
- * here.
+ * `backend` is the live store and *is* the store's identity: two agents share a
+ * store by pointing at the same backend, regardless of what each calls it.
+ * `mountPath` is its absolute mount under the memory root (e.g.
+ * `/mnt/memory/notes`); `access` gates writes through the mount. The curated and
+ * transcripts namespaces are constant within a backend (see
+ * {@link resolveStoreNamespace}), so they are not held here.
  */
 export interface MountedStore {
-  /** Store name (the key in `defineMemory({ stores })`) — the namespace key. */
+  /** Local mount alias (the key in `defineMemory({ stores })`) — not the share key. */
   readonly name: string;
   /** The live backing store this mount routes to. */
   readonly backend: MemoryStore;

@@ -12,8 +12,8 @@ import type { MemoryConfig, MountedStore } from "#runtime/memory/keys.js";
 import { resolveStoreNamespace, resolveTranscriptsNamespace } from "#runtime/memory/namespace.js";
 import { InMemoryMemoryStore } from "#runtime/memory/store.js";
 
-const CURATED_NS = resolveStoreNamespace("notes");
-const TRANSCRIPTS_NS = resolveTranscriptsNamespace("notes");
+const CURATED_NS = resolveStoreNamespace();
+const TRANSCRIPTS_NS = resolveTranscriptsNamespace();
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -230,19 +230,19 @@ describe("runDream", () => {
     const b = new InMemoryMemoryStore();
     const ro = new InMemoryMemoryStore();
     await a.write(
-      resolveTranscriptsNamespace("a"),
+      resolveTranscriptsNamespace(),
       "transcripts/s1.jsonl",
       encoder.encode("ta"),
       "ka",
     );
     await b.write(
-      resolveTranscriptsNamespace("b"),
+      resolveTranscriptsNamespace(),
       "transcripts/s1.jsonl",
       encoder.encode("tb"),
       "kb",
     );
     await ro.write(
-      resolveTranscriptsNamespace("ro"),
+      resolveTranscriptsNamespace(),
       "transcripts/s1.jsonl",
       encoder.encode("tro"),
       "kro",
@@ -257,16 +257,16 @@ describe("runDream", () => {
 
     await runDream(config, { model });
 
-    expect(decode(await a.read(resolveStoreNamespace("a"), "MEMORY.md"))).toBe("synth");
-    expect(decode(await b.read(resolveStoreNamespace("b"), "MEMORY.md"))).toBe("synth");
+    expect(decode(await a.read(resolveStoreNamespace(), "MEMORY.md"))).toBe("synth");
+    expect(decode(await b.read(resolveStoreNamespace(), "MEMORY.md"))).toBe("synth");
     // The ro store was never consolidated.
-    expect(await ro.read(resolveStoreNamespace("ro"), "MEMORY.md")).toBeNull();
+    expect(await ro.read(resolveStoreNamespace(), "MEMORY.md")).toBeNull();
   });
 
   it("uses config.dream.run when the author supplied an override", async () => {
     const backend = new InMemoryMemoryStore();
     await backend.write(
-      resolveTranscriptsNamespace("notes"),
+      resolveTranscriptsNamespace(),
       "transcripts/s1.jsonl",
       encoder.encode("t1"),
       "k1",
@@ -288,16 +288,14 @@ describe("runDream", () => {
     await runDream(config, { model });
 
     expect(receivedSessions).toBe(1);
-    expect(decode(await backend.read(resolveStoreNamespace("notes"), "CUSTOM.md"))).toBe(
-      "from override",
-    );
-    expect(await backend.read(resolveStoreNamespace("notes"), "MEMORY.md")).toBeNull();
+    expect(decode(await backend.read(resolveStoreNamespace(), "CUSTOM.md"))).toBe("from override");
+    expect(await backend.read(resolveStoreNamespace(), "MEMORY.md")).toBeNull();
   });
 
   it("is a no-op when the config declares no dream", async () => {
     const backend = new InMemoryMemoryStore();
     await backend.write(
-      resolveTranscriptsNamespace("notes"),
+      resolveTranscriptsNamespace(),
       "transcripts/s1.jsonl",
       encoder.encode("t1"),
       "k1",
@@ -312,6 +310,6 @@ describe("runDream", () => {
     await runDream(config, { model });
 
     expect(prompts).toHaveLength(0);
-    expect(await backend.read(resolveStoreNamespace("notes"), "MEMORY.md")).toBeNull();
+    expect(await backend.read(resolveStoreNamespace(), "MEMORY.md")).toBeNull();
   });
 });

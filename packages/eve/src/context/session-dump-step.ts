@@ -32,7 +32,7 @@ export async function maybeDumpSession(
     if (store.access !== "rw") {
       continue;
     }
-    const ns = resolveTranscriptsNamespace(store.name);
+    const ns = resolveTranscriptsNamespace();
     const writeKey = buildWriteKey({
       namespace: ns,
       turnId: session.sessionId,

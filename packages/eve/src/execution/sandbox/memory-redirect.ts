@@ -125,7 +125,7 @@ export async function memoryRead(path: string): Promise<string | null> {
     return null;
   }
 
-  const ns = resolveStoreNamespace(target.store.name);
+  const ns = resolveStoreNamespace();
   const bytes = await target.store.backend.read(ns, target.relPath);
   return bytes === null ? null : decoder.decode(bytes);
 }
@@ -164,7 +164,7 @@ export async function memoryWrite(path: string, content: string): Promise<void> 
     );
   }
 
-  const ns = resolveStoreNamespace(target.store.name);
+  const ns = resolveStoreNamespace();
   const bytes = encoder.encode(content);
   const turnId = loadContext().get(SessionKey)?.turn.id ?? "";
   const writeKey = buildWriteKey({ namespace: ns, turnId, seq: 0, content });
@@ -202,7 +202,7 @@ export async function memoryList(prefix: string): Promise<string[]> {
     return [];
   }
 
-  const ns = resolveStoreNamespace(target.store.name);
+  const ns = resolveStoreNamespace();
   const entries = await target.store.backend.list(ns, target.relPath);
   return entries.map((entry) => `${target.store.mountPath}/${entry.path}`);
 }
@@ -224,7 +224,7 @@ export async function memoryGrep(args: MemoryGrepArgs): Promise<MemoryGrepHit[]>
     return [];
   }
 
-  const ns = resolveStoreNamespace(target.store.name);
+  const ns = resolveStoreNamespace();
   const source = args.literal ? escapeRegExp(args.pattern) : args.pattern;
   const flags = args.ignoreCase ? "i" : "";
   const regex = new RegExp(source, flags);

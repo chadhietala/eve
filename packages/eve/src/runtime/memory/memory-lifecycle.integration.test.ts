@@ -52,8 +52,8 @@ describe("memory lifecycle: dump → dream → recall (multi-store)", () => {
 
   it("consolidates dumped transcripts into a store's MEMORY.md and recalls it per store", async () => {
     const backend = new FsMemoryStore(dir);
-    const curatedNs = resolveStoreNamespace(STORE);
-    const transcriptsNs = resolveTranscriptsNamespace(STORE);
+    const curatedNs = resolveStoreNamespace();
+    const transcriptsNs = resolveTranscriptsNamespace();
 
     // 1) A session's transcript is dumped off-mount into the store's transcripts.
     const transcript = [

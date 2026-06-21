@@ -150,8 +150,8 @@ export async function runDream(
 
     const buildInput: Mutable<BuildDreamContextInput> = {
       backend: store.backend,
-      curatedNamespace: resolveStoreNamespace(store.name),
-      transcriptsNamespace: resolveTranscriptsNamespace(store.name),
+      curatedNamespace: resolveStoreNamespace(),
+      transcriptsNamespace: resolveTranscriptsNamespace(),
       model: input.model,
     };
     if (config.dream.instructions !== undefined) {
