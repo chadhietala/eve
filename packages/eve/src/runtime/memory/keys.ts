@@ -78,7 +78,7 @@ export interface MemoryConfig {
     readonly model?: string;
     /** Free-text guidance steering what the default synthesis keeps/merges/drops. */
     readonly instructions?: string;
-    /** When to consolidate (consumed by the trigger, a later phase). */
+    /** When to consolidate: idle re-arm window, cron backstop, and session floor. */
     readonly schedule?: {
       readonly idleMs?: number;
       readonly cron?: string;
