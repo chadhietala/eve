@@ -146,16 +146,12 @@ export interface StoreMount {
 }
 
 /**
- * Public definition for an agent's memory layer authored in markdown or
- * TypeScript.
+ * Public definition for an agent's memory layer authored in TypeScript.
  *
- * Authored at the agent root as either `memory.md` or
- * `memory.{ts,cts,mts,js,cjs,mjs}`, or inside the `agent/memory/`
- * directory for multi-file setups. The `.md` variant supplies only the
- * {@link MemoryDefinition.orientation} (its markdown body) and declares NO
- * stores — live backends cannot be expressed in markdown, so a store-backed
- * memory layer requires the `memory.ts` form. With no `defineMemory` (no
- * memory source at all) the agent has no memory.
+ * Authored at the agent root as `memory.{ts,cts,mts,js,cjs,mjs}`, or inside the
+ * `agent/memory/` directory for multi-file setups. Memory is authored in
+ * TypeScript only — there is no markdown memory form. With no `defineMemory`
+ * (no memory source at all) the agent has no memory.
  *
  * Memory is a filesystem: the framework routes file-tool operations under
  * `/mnt/memory/<store-path>` to that store's backend. Non-filesystem access
@@ -166,16 +162,16 @@ export interface MemoryDefinition {
   /**
    * The named stores this agent mounts, keyed by store name. Each value mounts
    * a {@link MemoryStore} backend at a path under `/mnt/memory` with an access
-   * level. At most 8 stores — declaring more is a compile error. Markdown
-   * memory (`memory.md`) cannot declare stores; use `memory.ts`.
+   * level. A memory layer must declare at least one store and at most 8 —
+   * declaring zero or more than eight is a compile error.
    */
   readonly stores: Record<string, StoreMount>;
 
   /**
-   * Orientation text injected as a system pointer (like instructions) —
-   * the `memory.md` body or the `memory.ts` return. It is NOT a file
-   * mounted under any store; it is read-only context that tells the agent how
-   * to use its memory layer.
+   * Orientation text injected as a system pointer (like instructions) — the
+   * `memory.ts` return's `orientation` field. It is NOT a file mounted under
+   * any store; it is read-only context that tells the agent how to use its
+   * memory layer.
    */
   readonly orientation?: string;
 
@@ -193,9 +189,9 @@ export interface MemoryDefinition {
  * {@link MemoryDefinition}.
  *
  * Use it to declare the named stores, provide orientation text, and configure
- * consolidation. For fixed orientation text with no stores, author `memory.md`
- * instead. The result is branded so the compiler and runtime can validate that
- * a memory definition came through this helper.
+ * consolidation. A memory layer must declare at least one store. The result is
+ * branded so the compiler and runtime can validate that a memory definition
+ * came through this helper.
  */
 export function defineMemory<TMemory extends MemoryDefinition>(
   definition: ExactDefinition<TMemory, MemoryDefinition>,

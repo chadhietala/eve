@@ -58,7 +58,8 @@ export type ResolvedInstructions = Readonly<
 >;
 
 /**
- * Authored memory layer resolved from `memory.md` or `memory.{ts,...}`.
+ * Authored memory layer resolved from `memory.{ts,...}` (memory is authored in
+ * TypeScript only).
  *
  * Carries the durable projection — the mount `root`, optional orientation text,
  * the static `dream` (consolidation) config, and the static shape of each
@@ -73,7 +74,7 @@ export type ResolvedMemory = Readonly<
     orientation?: string;
     stores: readonly CompiledStore[];
     dream?: CompiledDream;
-  } & (Omit<MarkdownSourceRef<undefined>, "definition"> | ModuleSourceRef)
+  } & ModuleSourceRef
 >;
 
 /**
@@ -421,8 +422,8 @@ export interface ResolvedAgent {
    */
   readonly instructions?: ResolvedInstructions;
   /**
-   * Authored memory layer resolved from `memory.md` or `memory.{ts,...}`,
-   * or `undefined` when the agent does not declare one.
+   * Authored memory layer resolved from `memory.{ts,...}` (memory is authored
+   * in TypeScript only), or `undefined` when the agent does not declare one.
    */
   readonly memory?: ResolvedMemory;
   /**

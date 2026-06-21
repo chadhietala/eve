@@ -8,7 +8,6 @@ import type { NamedSkillDefinition } from "#shared/skill-definition.js";
 import type { ScheduleDefinition } from "#public/definitions/schedule.js";
 import type { SkillDefinition } from "#public/definitions/skill.js";
 import type { InstructionsDefinition } from "#public/definitions/instructions.js";
-import type { MemoryDefinition } from "#public/definitions/memory.js";
 import type { DiscoverDiagnostic, DiscoverDiagnosticsSummary } from "#discover/diagnostics.js";
 import { summarizeDiscoverDiagnostics } from "#discover/diagnostics.js";
 import { normalizeLogicalPath } from "#discover/filesystem.js";
@@ -21,7 +20,7 @@ export const AGENT_SOURCE_MANIFEST_KIND = "eve-agent-discovery-manifest";
 /**
  * Current manifest schema version.
  */
-export const AGENT_SOURCE_MANIFEST_VERSION = 13;
+export const AGENT_SOURCE_MANIFEST_VERSION = 14;
 
 /**
  * Channel source reference preserved by the discovery manifest.
@@ -51,11 +50,12 @@ export type InstructionsSourceRef = MarkdownSourceRef<InstructionsDefinition> | 
 
 /**
  * Memory source reference preserved by discovery for compiler
- * normalization. A `memory.md` lowers to a {@link MemoryDefinition} carrying
- * the markdown body as its seed; a `memory.{ts,...}` is a module reference
- * resolved (and brand-checked) at compile time.
+ * normalization. Memory is authored in TypeScript only: a
+ * `memory.{ts,cts,mts,js,cjs,mjs}` (or a module inside the `memory/`
+ * directory) is a module reference resolved — and brand-checked — at compile
+ * time. There is no markdown memory form.
  */
-export type MemorySourceRef = MarkdownSourceRef<MemoryDefinition> | ModuleSourceRef;
+export type MemorySourceRef = ModuleSourceRef;
 
 /**
  * Skill source reference preserved by the discovery manifest.
@@ -169,10 +169,11 @@ export interface AgentSourceManifest {
   /**
    * Authored memory sources discovered at the agent root.
    *
-   * Supports a flat file (`memory.md` or `memory.{ts,...}`) and a `memory/`
-   * directory, mirroring instructions. Memory is optional — this array is
-   * empty when no memory is authored, and discovery emits no diagnostic for
-   * its absence.
+   * Memory is authored in TypeScript: a flat `memory.{ts,...}` module and/or a
+   * `memory/` directory of modules. Memory is optional — this array is empty
+   * when no memory is authored, and discovery emits no diagnostic for its
+   * absence. A stray `memory.md` is not a memory source; discovery flags it
+   * with a diagnostic telling the author to use `memory.ts`.
    */
   memory: MemorySourceRef[];
   /**

@@ -39,7 +39,7 @@ export const ROOT_COMPILED_AGENT_NODE_ID = "__root__";
 /**
  * Current compiled manifest schema version.
  */
-export const COMPILED_AGENT_MANIFEST_VERSION = 34;
+export const COMPILED_AGENT_MANIFEST_VERSION = 35;
 
 /**
  * Compiled channel entry preserved in the compiled manifest.
@@ -424,9 +424,9 @@ const compiledMemorySchema = z
      */
     orientation: z.string().optional(),
     /**
-     * Static shape of each mounted store (name/path/access). Empty for the
-     * markdown form, which cannot declare live backends. The live backends
-     * resolve from the module map at runtime.
+     * Static shape of each mounted store (name/path/access). A memory layer
+     * always declares at least one store. The live backends resolve from the
+     * module map at runtime.
      */
     stores: z.array(compiledStoreSchema),
     /**
@@ -437,7 +437,7 @@ const compiledMemorySchema = z
     dream: compiledDreamSchema.optional(),
     exportName: z.string().optional(),
     sourceId: z.string(),
-    sourceKind: z.union([z.literal("markdown"), z.literal("module")]),
+    sourceKind: z.literal("module"),
   })
   .strict();
 

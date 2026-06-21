@@ -148,6 +148,7 @@ function createResolvedMemory(memory: CompiledMemory | undefined): ResolvedMemor
     root: string;
     stores: readonly ResolvedMemory["stores"][number][];
     sourceId: string;
+    sourceKind: "module";
     orientation?: string;
     dream?: ResolvedMemory["dream"];
   } = {
@@ -156,6 +157,7 @@ function createResolvedMemory(memory: CompiledMemory | undefined): ResolvedMemor
     root: memory.root,
     stores: memory.stores.map((store) => ({ ...store })),
     sourceId: memory.sourceId,
+    sourceKind: "module",
   };
 
   if (memory.orientation !== undefined) {
@@ -166,9 +168,7 @@ function createResolvedMemory(memory: CompiledMemory | undefined): ResolvedMemor
     base.dream = memory.dream;
   }
 
-  return memory.sourceKind === "markdown"
-    ? { ...base, sourceKind: "markdown" }
-    : { ...base, sourceKind: "module" };
+  return base;
 }
 
 function createResolvedInstructions(

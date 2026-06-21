@@ -204,10 +204,10 @@ async function compileAgentNodeManifest(
  * Composes the discovered memory sources into a single compiled definition.
  *
  * Memory is optional, so an empty list yields `undefined`. Configuration
- * (root, store, handlers) is taken from the first source — a `.ts`
- * `defineMemory` leads when present — and the orientation text of every source
- * is concatenated so a flat `memory.md` and a `memory/` directory compose into
- * one orientation.
+ * (root, store, handlers) is taken from the first source — the flat
+ * `memory.ts` leads when present — and the orientation text of every source is
+ * concatenated so a flat `memory.ts` and a `memory/` directory compose into one
+ * orientation.
  */
 function composeCompiledMemory(entries: readonly CompiledMemory[]): CompiledMemory | undefined {
   const [first, ...rest] = entries;

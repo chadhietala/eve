@@ -26,7 +26,7 @@ export interface BuildMemoryConfigInput {
   readonly root: string;
   /** The resolved store mounts (each carrying its live backend). */
   readonly stores: readonly ResolvedStoreMount[];
-  /** Orientation text injected as a system pointer (memory.md body / memory.ts return). */
+  /** Orientation text injected as a system pointer (the `memory.ts` return). */
   readonly orientation?: string;
   /**
    * Memory consolidation ("dream") config: the static fields projected from the

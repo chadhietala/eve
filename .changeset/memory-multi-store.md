@@ -11,7 +11,9 @@ rejected). Sharing across agents is "point at the same backend" — the store na
 is a local mount alias, not the sharing key, so namespaces are constant within a
 backend (the backend instance is the identity). Each store also keeps an off-mount
 transcripts area (`transcripts/<session-id>.jsonl`) that powers per-store
-consolidation. `memory.md` now compiles to orientation-only with no stores;
-declaring live store backends requires `memory.ts`. The single agent-scoped
-`/memory` mount, `defineMemory({ store, root })`, and the agent-scoped session
-dump are removed.
+consolidation. Memory is authored in TypeScript only — `memory.ts` (or a
+`memory/` directory of modules); a markdown `memory.md` is not a memory source
+and discovery flags it with a diagnostic. A memory layer must declare at least
+one store (zero stores is a compile error). The single agent-scoped `/memory`
+mount, `defineMemory({ store, root })`, and the agent-scoped session dump are
+removed.

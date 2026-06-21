@@ -7,18 +7,9 @@ Memory is a durable filesystem an agent can read and write across sessions. The 
 
 Memory is a filesystem, not a query API. Search, RAG, and knowledge-graph patterns are built with eve's normal [tool system](./tools); the memory layer is for durable files the agent treats as its own scratch space and long-term notes.
 
-A memory source is a single `memory.md` or `memory.ts` at the agent root (or an `agent/memory/` directory for multi-file setups). Both the root agent and declared [subagents](./subagents) may have one.
+A memory source is authored in TypeScript: a `memory.ts` at the agent root (or an `agent/memory/` directory of modules for multi-file setups). Both the root agent and declared [subagents](./subagents) may have one.
 
-## Two forms
-
-`memory.md` supplies **orientation text only** — its markdown body becomes a system pointer that tells the model how to use its memory. It declares no stores, because live storage backends cannot be expressed in markdown.
-
-```md title="agent/memory.md"
-Keep a running `index.md` at the root of each store. Append durable facts as you
-learn them; never delete a user's stated preferences.
-```
-
-`memory.ts` is the full form: it declares the **stores** that get mounted, and optionally orientation text and consolidation. Use it whenever the agent needs real storage.
+`memory.ts` declares the **stores** that get mounted, and optionally orientation text and consolidation. A memory layer must declare at least one store. Orientation text is supplied through the `orientation` field — it becomes a system pointer that tells the model how to use its memory.
 
 ```ts title="agent/memory.ts"
 import { defineMemory, fsStore } from "eve/memory";
@@ -47,7 +38,7 @@ interface StoreMount {
 }
 ```
 
-`defineMemory` is a type-level pass-through that brands the definition so the compiler and runtime can validate it. The compiler enforces the limits (at most 8 stores; markdown memory cannot declare stores).
+`defineMemory` is a type-level pass-through that brands the definition so the compiler and runtime can validate it. The compiler enforces the limits (at least one store, and at most 8).
 
 ## Stores
 

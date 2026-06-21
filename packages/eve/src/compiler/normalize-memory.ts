@@ -19,26 +19,21 @@ const DEFAULT_MEMORY_ROOT = "/mnt/memory";
 const MAX_STORES = 8;
 
 /**
- * Compiles one authored memory source (markdown `memory.md` or module-backed
- * `defineMemory`) into the serializable {@link CompiledMemory} projection
- * loaded by the runtime.
+ * Compiles one authored memory source (module-backed `defineMemory`) into the
+ * serializable {@link CompiledMemory} projection loaded by the runtime.
  *
- * The markdown form contributes only an `orientation` (its body) with NO stores
- * — markdown cannot declare live backends. The module form is brand-checked (it
- * must come through `defineMemory`) and contributes its `orientation`, `dream`,
- * and the static shape (name/path/access) of each store; the live backends are
- * not serialized — they resolve from the module map at runtime via the source's
- * logical path. Declaring more than {@link MAX_STORES} stores is a compile error.
+ * Memory is authored in TypeScript only. The export is brand-checked (it must
+ * come through `defineMemory`) and contributes its `orientation`, `dream`, and
+ * the static shape (name/path/access) of each store; the live backends are not
+ * serialized — they resolve from the module map at runtime via the source's
+ * logical path. A memory layer must declare at least one store, and at most
+ * {@link MAX_STORES}; violating either bound is a compile error.
  */
 export async function compileMemoryEntry(
   agentRoot: string,
   source: MemorySourceRef,
   options: ModuleBackedDefinitionLoadOptions = {},
 ): Promise<CompiledMemory> {
-  if (source.sourceKind === "markdown") {
-    return projectCompiledMemory(source.definition, source);
-  }
-
   const exportValue = await loadModuleBackedDefinition({
     agentRoot,
     externalDependencies: options.externalDependencies,
@@ -55,7 +50,13 @@ export async function compileMemoryEntry(
   return projectCompiledMemory(exportValue as MemoryDefinition, source);
 }
 
-function projectCompiledMemory(
+/**
+ * Projects a branded {@link MemoryDefinition} and its module source ref into
+ * the serializable {@link CompiledMemory}. Exposed for unit tests that exercise
+ * the projection and its store-count validation without loading a real module
+ * from disk.
+ */
+export function projectCompiledMemory(
   definition: MemoryDefinition,
   source: MemorySourceRef,
 ): CompiledMemory {
@@ -84,16 +85,23 @@ function projectCompiledMemory(
 
 /**
  * Projects the authored `stores` map into the static, serializable
- * {@link CompiledStore} list. The markdown form has no `stores` (it cannot
- * declare live backends), so it compiles to an empty list. Enforces the
- * {@link MAX_STORES} cap with a clear diagnostic, and preserves only the durable
- * fields (name/path/access) — the live backend resolves from the module map.
+ * {@link CompiledStore} list. A memory layer must mount at least one store —
+ * declaring zero is a compile error (the layer would otherwise be a silent
+ * no-op). Enforces the {@link MAX_STORES} cap with a clear diagnostic, and
+ * preserves only the durable fields (name/path/access) — the live backend
+ * resolves from the module map.
  */
 function projectCompiledStores(
   definition: MemoryDefinition,
   source: MemorySourceRef,
 ): CompiledStore[] {
   const entries = Object.entries(definition.stores ?? {});
+
+  if (entries.length === 0) {
+    throw new Error(
+      `Memory definition in "${source.logicalPath}" declares no stores; a memory layer must mount at least one store.`,
+    );
+  }
 
   if (entries.length > MAX_STORES) {
     throw new Error(

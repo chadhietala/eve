@@ -41,8 +41,7 @@ interface ResolvedMemoryModule {
 /**
  * Resolves the live store `backend`s and `dream.run` override from a
  * module-backed (`memory.{ts,...}`) `defineMemory` export, using the same module
- * map lookup as tools/connections/hooks. Markdown memory has no live surfaces, so
- * this is only consulted for `sourceKind === "module"`.
+ * map lookup as tools/connections/hooks.
  *
  * Exported for testing the resolution in isolation (the `seedMemoryConfig` entry
  * point needs a full bundle, which this avoids).
@@ -119,7 +118,8 @@ export async function resolveMemoryModule(
  * Reads the resolved memory off the bundle, resolves the live store backends and
  * `dream.run` override from the module map, and mounts each compiled store
  * (matched to its live backend by name) into the config. Returns `undefined`
- * when the agent declares no memory layer or no stores.
+ * when the agent declares no memory layer. A declared memory layer always has at
+ * least one store (enforced at compile time).
  *
  * This is the shared construction the turn path ({@link seedMemoryConfig}) and
  * the background consolidation path both build on, so an off-turn dream sees
@@ -131,12 +131,6 @@ export async function buildMemoryConfigForBundle(
 ): Promise<MemoryConfig | undefined> {
   const memory = bundle.resolvedAgent.memory;
   if (memory === undefined) {
-    return undefined;
-  }
-
-  // Markdown memory has no live backends; without resolvable stores there is
-  // nothing to mount, so no config is produced.
-  if (memory.sourceKind !== "module" || memory.stores.length === 0) {
     return undefined;
   }
 

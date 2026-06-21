@@ -52,9 +52,9 @@ export interface MemoryConfig {
   readonly stores: readonly MountedStore[];
 
   /**
-   * Orientation text (the `memory.md` body or `memory.ts` return) injected as a
-   * system pointer so the model knows it has a memory filesystem and how to use
-   * it. Guidance, not a file under the mount.
+   * Orientation text (the `memory.ts` return) injected as a system pointer so
+   * the model knows it has a memory filesystem and how to use it. Guidance, not
+   * a file under the mount.
    */
   readonly orientation?: string;
 
