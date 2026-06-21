@@ -1,6 +1,6 @@
 import type { ContextContainer } from "#context/container.js";
 import { expectObjectRecord } from "#internal/authored-module.js";
-import type { DreamContext, MemoryDefinition } from "#public/definitions/memory.js";
+import type { DreamContext } from "#public/definitions/memory.js";
 import { buildMemoryConfig, type BuildMemoryConfigInput } from "#runtime/memory/config.js";
 import type { MemoryConfig } from "#runtime/memory/keys.js";
 import { MemoryConfigKey } from "#runtime/memory/keys.js";
@@ -18,9 +18,6 @@ type MemoryConfigBundle = Pick<
 
 type DreamRun = (ctx: DreamContext) => void | Promise<void>;
 
-type MemoryHandlers = Pick<MemoryDefinition, "onRead" | "onWrite" | "onList" | "onGrep">;
-const HANDLER_NAMES = ["onRead", "onWrite", "onList", "onGrep"] as const;
-
 // The module-backed fields of a resolved memory definition needed for lookup.
 interface MemoryModuleRef {
   readonly exportName?: string;
@@ -29,10 +26,10 @@ interface MemoryModuleRef {
 }
 
 /**
- * Resolves the live `store`, escape-hatch handlers, and `dream.run` override
- * from a module-backed (`memory.{ts,...}`) `defineMemory` export, using the
- * same module map lookup as tools/connections/hooks. Markdown memory has no
- * live surfaces, so this is only consulted for `sourceKind === "module"`.
+ * Resolves the live `store` and `dream.run` override from a module-backed
+ * (`memory.{ts,...}`) `defineMemory` export, using the same module map lookup
+ * as tools/connections/hooks. Markdown memory has no live surfaces, so this is
+ * only consulted for `sourceKind === "module"`.
  *
  * Exported for testing the resolution in isolation (the `seedMemoryConfig`
  * entry point needs a full bundle, which this avoids).
@@ -41,7 +38,7 @@ export async function resolveMemoryModule(
   memory: MemoryModuleRef,
   moduleMap: Parameters<typeof loadResolvedModuleExport>[0]["moduleMap"],
   nodeId: string | undefined,
-): Promise<{ store?: MemoryStore; handlers?: MemoryHandlers; dreamRun?: DreamRun }> {
+): Promise<{ store?: MemoryStore; dreamRun?: DreamRun }> {
   let exportValue: unknown;
   try {
     exportValue = await loadResolvedModuleExport({
@@ -71,25 +68,15 @@ export async function resolveMemoryModule(
     `Expected the memory export from "${memory.logicalPath}" to be an object.`,
   );
 
-  const resolved: { store?: MemoryStore; handlers?: MemoryHandlers; dreamRun?: DreamRun } = {};
+  const resolved: { store?: MemoryStore; dreamRun?: DreamRun } = {};
   if (record.store !== undefined) {
     resolved.store = record.store as MemoryStore;
   }
 
-  const handlers: Record<string, unknown> = {};
-  for (const name of HANDLER_NAMES) {
-    if (typeof record[name] === "function") {
-      handlers[name] = record[name];
-    }
-  }
-  if (Object.keys(handlers).length > 0) {
-    resolved.handlers = handlers as MemoryHandlers;
-  }
-
   // The dream's static config is serialized into the manifest, but its `run`
   // override is a live function — only reachable from the module export. Pull
-  // it here so the same module-map lookup that resolves the store and handlers
-  // also resolves the consolidation override.
+  // it here so the same module-map lookup that resolves the store also resolves
+  // the consolidation override.
   const dream = record.dream;
   if (
     dream !== null &&
@@ -108,9 +95,9 @@ export async function resolveMemoryModule(
  *
  * Reads the resolved memory off the bundle, derives the agent-scoped mounted
  * and raw-sessions namespaces from the agent id, and — for a module-backed
- * (`memory.{ts,...}`) definition — resolves the live store, escape-hatch
- * handlers, and `dream.run` override from the module map. Returns `undefined`
- * when the agent declares no memory layer.
+ * (`memory.{ts,...}`) definition — resolves the live store and `dream.run`
+ * override from the module map. Returns `undefined` when the agent declares no
+ * memory layer.
  *
  * This is the shared construction the turn path ({@link seedMemoryConfig}) and
  * the background consolidation path both build on, so an off-turn dream sees
@@ -139,9 +126,6 @@ export async function buildMemoryConfigForBundle(
     const resolved = await resolveMemoryModule(memory, bundle.moduleMap, bundle.nodeId);
     if (resolved.store !== undefined) {
       input.store = resolved.store;
-    }
-    if (resolved.handlers !== undefined) {
-      input.handlers = resolved.handlers;
     }
     dreamRun = resolved.dreamRun;
   }

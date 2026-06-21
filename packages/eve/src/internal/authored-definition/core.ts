@@ -212,8 +212,8 @@ export function normalizeInstructionsDefinition(
  * Used for the `memory.md` path, where the only fields a markdown file can
  * supply are the orientation text (its markdown body) and an optional `root`
  * override. Memory identity is path-derived (`memory.md` / `memory.{ts,...}`),
- * so no `name` field is accepted. The `.ts` path carries `store`/handlers and
- * is validated by its brand instead of this normalizer.
+ * so no `name` field is accepted. The `.ts` path carries `store` and is
+ * validated by its brand instead of this normalizer.
  */
 export function normalizeMemoryDefinition(
   value: unknown,

@@ -48,29 +48,12 @@ function typeOnlyFixtures(): void {
   // @ts-expect-error Memory identity is path-derived.
   defineMemory(memoryWithName);
 
-  defineMemory({
+  const memoryWithHandler = {
     root: "/scratch",
-    async onRead(path, ctx) {
-      void ctx.session.id;
-      return path === "missing" ? null : new Uint8Array();
-    },
-    async onWrite(path, bytes, ctx) {
-      void path;
-      void bytes;
-      void ctx.channel.continuationToken;
-    },
-    async onList(prefix, ctx) {
-      void prefix;
-      void ctx.messages;
-      return [{ path: "a.md", size: 1 }];
-    },
-    async onGrep(pattern, prefix, ctx) {
-      void pattern;
-      void prefix;
-      void ctx.session.auth;
-      return [{ path: "a.md", line: 1, text: "match" }];
-    },
-  });
+    onRead: () => null,
+  };
+  // @ts-expect-error Per-op IO handlers were removed — memory is a filesystem.
+  defineMemory(memoryWithHandler);
 }
 
 void typeOnlyFixtures;

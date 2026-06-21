@@ -24,31 +24,28 @@ const SOURCE_ID = "agent/memory.ts";
 const REF = { exportName: undefined, logicalPath: SOURCE_ID, sourceId: SOURCE_ID };
 
 describe("resolveMemoryModule", () => {
-  it("threads the live store and handlers from a defineMemory export", async () => {
+  it("threads the live store from a defineMemory export", async () => {
     const store = new InMemoryMemoryStore();
-    const onWrite = (_path: string): void => undefined;
-    const onGrep = (): never[] => [];
     const moduleMap = buildModuleMap(SOURCE_ID, {
-      default: defineMemory({ store, onWrite, onGrep }),
+      default: defineMemory({ store }),
     });
 
     const resolved = await resolveMemoryModule(REF, moduleMap, undefined);
 
-    // The same live instances are threaded through — not copies.
+    // The same live instance is threaded through — not a copy.
     expect(resolved.store).toBe(store);
-    expect(resolved.handlers?.onWrite).toBe(onWrite);
-    expect(resolved.handlers?.onGrep).toBe(onGrep);
-    expect(resolved.handlers?.onRead).toBeUndefined();
+    expect(resolved.dreamRun).toBeUndefined();
+    expect("handlers" in resolved).toBe(false);
   });
 
-  it("returns nothing for an export that declares neither store nor handlers", async () => {
+  it("returns nothing for an export that declares neither store nor dream", async () => {
     const moduleMap = buildModuleMap(SOURCE_ID, { default: defineMemory({ root: "/memory" }) });
 
     const resolved = await resolveMemoryModule(REF, moduleMap, undefined);
 
     expect(resolved.store).toBeUndefined();
-    expect(resolved.handlers).toBeUndefined();
     expect(resolved.dreamRun).toBeUndefined();
+    expect("handlers" in resolved).toBe(false);
   });
 
   it("threads the live dream.run override from a defineMemory export", async () => {

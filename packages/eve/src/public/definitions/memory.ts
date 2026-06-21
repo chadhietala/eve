@@ -1,7 +1,6 @@
 import type { LanguageModel } from "ai";
 
 import type { ExactDefinition } from "#public/definitions/exact.js";
-import type { DynamicResolveContext } from "#shared/dynamic-tool-definition.js";
 import type { MemoryStore } from "#runtime/memory/store.js";
 
 /**
@@ -23,26 +22,6 @@ export function isBrandedMemoryDefinition(value: unknown): boolean {
     value !== null &&
     (value as Record<symbol, unknown>)[MEMORY_BRAND] === true
   );
-}
-
-/**
- * One entry returned by a memory `list`/`onList`: a path plus its size in
- * bytes. Mirrors the `MemoryStore` listing shape so escape-hatch handlers
- * and the framework defaults agree on the wire format.
- */
-export interface MemoryListEntry {
-  readonly path: string;
-  readonly size: number;
-}
-
-/**
- * One match returned by a memory `grep`/`onGrep`: the matching path, the
- * 1-based line number, and the line text.
- */
-export interface MemoryGrepMatch {
-  readonly path: string;
-  readonly line: number;
-  readonly text: string;
 }
 
 /**
@@ -146,14 +125,14 @@ export interface DreamConfig {
  * `memory.{ts,cts,mts,js,cjs,mjs}`, or inside the `agent/memory/`
  * directory for multi-file setups. The `.md` variant supplies only the
  * {@link MemoryDefinition.orientation} (its markdown body); the `.ts`
- * variant may additionally override the store and the
- * read/write/list/grep operations.
+ * variant may additionally swap the backing {@link MemoryStore}.
  *
- * The framework drives the default memory operations against an eve-owned
- * versioned {@link MemoryStore}, namespaced from the request's identity and
- * channel continuation token. The optional handlers below are escape
- * hatches that override those defaults; absent handlers fall back to the
- * framework implementation (convention over configuration).
+ * Memory is a filesystem: the framework always routes `/memory` file-tool
+ * operations to the {@link MemoryStore}, namespaced from the request's
+ * identity and channel continuation token. There is no per-operation
+ * override — a custom backend is supplied by swapping the `store`, and
+ * non-filesystem access patterns (search/RAG/knowledge-graph) are built with
+ * eve's normal tool system, not the memory layer.
  */
 export interface MemoryDefinition {
   /**
@@ -186,47 +165,6 @@ export interface MemoryDefinition {
    * override. Absent means no consolidation runs.
    */
   readonly dream?: DreamConfig;
-
-  /**
-   * Escape hatch overriding the default read of a memory path. Receives
-   * the request-scoped resolve context. Return the stored bytes, or `null`
-   * when the path does not exist.
-   */
-  readonly onRead?: (
-    path: string,
-    ctx: DynamicResolveContext,
-  ) => Uint8Array | null | Promise<Uint8Array | null>;
-
-  /**
-   * Escape hatch overriding the default write of a memory path. Receives
-   * the bytes to persist and the request-scoped resolve context.
-   */
-  readonly onWrite?: (
-    path: string,
-    bytes: Uint8Array,
-    ctx: DynamicResolveContext,
-  ) => void | Promise<void>;
-
-  /**
-   * Escape hatch overriding the default listing under a path prefix.
-   * Receives the request-scoped resolve context and returns the entries
-   * beneath `prefix`.
-   */
-  readonly onList?: (
-    prefix: string,
-    ctx: DynamicResolveContext,
-  ) => readonly MemoryListEntry[] | Promise<readonly MemoryListEntry[]>;
-
-  /**
-   * Escape hatch overriding the default content search. Receives the
-   * search `pattern`, an optional path `prefix` to scope the search, and
-   * the request-scoped resolve context.
-   */
-  readonly onGrep?: (
-    pattern: string,
-    prefix: string,
-    ctx: DynamicResolveContext,
-  ) => readonly MemoryGrepMatch[] | Promise<readonly MemoryGrepMatch[]>;
 }
 
 /**
@@ -234,11 +172,9 @@ export interface MemoryDefinition {
  * {@link MemoryDefinition}.
  *
  * Use it to override the memory root, swap the backing {@link MemoryStore},
- * provide orientation text, or supply `onRead`/`onWrite`/`onList`/`onGrep`
- * escape hatches over the framework defaults. For fixed orientation text
- * with no overrides, author `memory.md` instead. The result is branded so the
- * compiler and runtime can validate that a memory definition came through
- * this helper.
+ * or provide orientation text. For fixed orientation text with no overrides,
+ * author `memory.md` instead. The result is branded so the compiler and
+ * runtime can validate that a memory definition came through this helper.
  */
 export function defineMemory<TMemory extends MemoryDefinition>(
   definition: ExactDefinition<TMemory, MemoryDefinition>,

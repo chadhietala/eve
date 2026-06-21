@@ -147,7 +147,6 @@ function createResolvedMemory(memory: CompiledMemory | undefined): ResolvedMemor
     logicalPath: string;
     root: string;
     hasStore: boolean;
-    handlerNames: ResolvedMemory["handlerNames"];
     sourceId: string;
     orientation?: string;
     dream?: ResolvedMemory["dream"];
@@ -156,7 +155,6 @@ function createResolvedMemory(memory: CompiledMemory | undefined): ResolvedMemor
     logicalPath: memory.logicalPath,
     root: memory.root,
     hasStore: memory.hasStore,
-    handlerNames: [...memory.handlerNames],
     sourceId: memory.sourceId,
   };
 

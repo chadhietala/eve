@@ -2,16 +2,14 @@ import { FsMemoryStore } from "#runtime/memory/fs-store.js";
 import type { MemoryConfig } from "#runtime/memory/keys.js";
 import { resolveMemoryNamespace, resolveSessionsNamespace } from "#runtime/memory/namespace.js";
 import type { MemoryStore } from "#runtime/memory/store.js";
-import type { MemoryDefinition } from "#public/definitions/memory.js";
 
 /**
  * Inputs for {@link buildMemoryConfig}.
  *
- * `store` and `handlers` carry the live, non-serializable surfaces that a
- * `memory.{ts,...}` `defineMemory` export supplies. They are resolved from the
- * compiled module map at runtime (the same way authored tools resolve their
- * modules) and threaded in here; absent, the framework falls back to its
- * default {@link FsMemoryStore} and store-backed handlers.
+ * `store` carries the live, non-serializable surface that a `memory.{ts,...}`
+ * `defineMemory` export supplies. It is resolved from the compiled module map
+ * at runtime (the same way authored tools resolve their modules) and threaded
+ * in here; absent, the framework falls back to its default {@link FsMemoryStore}.
  */
 export interface BuildMemoryConfigInput {
   /** Absolute POSIX mount root the file tools redirect under, e.g. `/memory`. */
@@ -25,11 +23,6 @@ export interface BuildMemoryConfigInput {
    * framework default {@link FsMemoryStore} is used.
    */
   readonly store?: MemoryStore;
-  /**
-   * Live escape-hatch handlers resolved from a `defineMemory` export. When
-   * omitted the framework drives default store-backed behavior.
-   */
-  readonly handlers?: Pick<MemoryDefinition, "onRead" | "onWrite" | "onList" | "onGrep">;
 
   /**
    * Memory consolidation ("dream") config: the static fields projected from the
@@ -46,7 +39,7 @@ export interface BuildMemoryConfigInput {
  * {@link resolveMemoryNamespace} and the off-mount raw-sessions namespace via
  * {@link resolveSessionsNamespace}, instantiates the default
  * {@link FsMemoryStore} unless a live store was supplied, and passes through the
- * orientation and any author handlers. The result is a transient value
+ * orientation. The result is a transient value
  * re-seeded each step under {@link MemoryConfigKey} — never serialized — so a
  * live store instance is safe to hold here.
  */
@@ -60,7 +53,6 @@ export function buildMemoryConfig(input: BuildMemoryConfigInput): MemoryConfig {
     namespace: typeof namespace;
     sessionsNamespace: typeof sessionsNamespace;
     orientation?: string;
-    handlers?: BuildMemoryConfigInput["handlers"];
     dream?: MemoryConfig["dream"];
   } = {
     root: input.root,
@@ -71,10 +63,6 @@ export function buildMemoryConfig(input: BuildMemoryConfigInput): MemoryConfig {
 
   if (input.orientation !== undefined) {
     config.orientation = input.orientation;
-  }
-
-  if (input.handlers !== undefined) {
-    config.handlers = input.handlers;
   }
 
   if (input.dream !== undefined) {

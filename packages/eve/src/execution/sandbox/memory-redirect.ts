@@ -11,9 +11,7 @@
  */
 
 import { loadContext } from "#context/container.js";
-import { buildResolveContext } from "#context/dynamic-resolve-context.js";
 import { SessionKey } from "#context/keys.js";
-import type { DynamicResolveContext } from "#shared/dynamic-tool-definition.js";
 import { type MemoryConfig, MemoryConfigKey } from "#runtime/memory/keys.js";
 import { buildWriteKey } from "#runtime/memory/write-key.js";
 
@@ -40,15 +38,6 @@ interface MemoryGrepArgs {
 
 function getMemoryConfig(): MemoryConfig | undefined {
   return loadContext().get(MemoryConfigKey);
-}
-
-/**
- * Returns the {@link DynamicResolveContext} handed to author escape-hatch
- * handlers. Handlers in slice 1 only read identity/channel metadata, so an
- * empty message history is sufficient.
- */
-function resolveContextForHandlers(): DynamicResolveContext {
-  return buildResolveContext(loadContext(), []);
 }
 
 /**
@@ -102,13 +91,7 @@ export async function memoryRead(path: string): Promise<string | null> {
   }
 
   const relPath = toRelativePath(config, path);
-
-  let bytes: Uint8Array | null;
-  if (config.handlers?.onRead !== undefined) {
-    bytes = await config.handlers.onRead(relPath, resolveContextForHandlers());
-  } else {
-    bytes = await config.store.read(config.namespace, relPath);
-  }
+  const bytes = await config.store.read(config.namespace, relPath);
 
   if (bytes === null) {
     return null;
@@ -120,8 +103,7 @@ export async function memoryRead(path: string): Promise<string | null> {
 /**
  * Writes `content` to a memory path in place. `/memory` is a plain store-backed
  * filesystem: the model writes and overwrites named files (e.g. an `index.md`
- * table of contents, or dated notes if its orientation instructs that). An
- * author `onWrite` handler overrides the default store write.
+ * table of contents, or dated notes if its orientation instructs that).
  *
  * Slice-1 simplification: the idempotency key is content-addressed via
  * `seq: 0` (partitioned by turn id when available), so a replayed identical
@@ -137,11 +119,6 @@ export async function memoryWrite(path: string, content: string): Promise<void> 
 
   const relPath = toRelativePath(config, path);
   const bytes = encoder.encode(content);
-
-  if (config.handlers?.onWrite !== undefined) {
-    await config.handlers.onWrite(relPath, bytes, resolveContextForHandlers());
-    return;
-  }
 
   const turnId = loadContext().get(SessionKey)?.turn.id ?? "";
   const writeKey = buildWriteKey({
@@ -165,25 +142,16 @@ export async function memoryList(prefix: string): Promise<string[]> {
   const relPrefix = toRelativePrefix(config, prefix);
 
   const paths: string[] = [];
-  if (config.handlers?.onList !== undefined) {
-    const entries = await config.handlers.onList(relPrefix, resolveContextForHandlers());
-    for (const entry of entries) {
-      paths.push(`${config.root}/${entry.path}`);
-    }
-  } else {
-    const entries = await config.store.list(config.namespace, relPrefix);
-    for (const entry of entries) {
-      paths.push(`${config.root}/${entry.path}`);
-    }
+  const entries = await config.store.list(config.namespace, relPrefix);
+  for (const entry of entries) {
+    paths.push(`${config.root}/${entry.path}`);
   }
   return paths;
 }
 
 /**
  * Searches memory contents under `prefix` for `pattern`, returning matches
- * with full (root-prefixed) paths and 1-based line numbers.
- *
- * Honors `config.handlers.onGrep` when present; otherwise lists entries under
+ * with full (root-prefixed) paths and 1-based line numbers. Lists entries under
  * the prefix, reads each, and regex-matches lines. `literal` matches the
  * `grep` tool's fixed-string mode by escaping regex metacharacters.
  */
@@ -194,26 +162,6 @@ export async function memoryGrep(args: MemoryGrepArgs): Promise<MemoryGrepHit[]>
   }
 
   const relPrefix = toRelativePrefix(config, args.prefix);
-
-  if (config.handlers?.onGrep !== undefined) {
-    const matches = await config.handlers.onGrep(
-      args.pattern,
-      relPrefix,
-      resolveContextForHandlers(),
-    );
-    const hits: MemoryGrepHit[] = [];
-    for (const match of matches) {
-      if (hits.length >= args.limit) {
-        break;
-      }
-      hits.push({
-        path: `${config.root}/${match.path}`,
-        lineNumber: match.line,
-        line: match.text,
-      });
-    }
-    return hits;
-  }
 
   const source = args.literal ? escapeRegExp(args.pattern) : args.pattern;
   const flags = args.ignoreCase ? "i" : "";

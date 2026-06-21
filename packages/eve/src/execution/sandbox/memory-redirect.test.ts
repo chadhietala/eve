@@ -78,29 +78,6 @@ describe("memoryRead / memoryWrite", () => {
       expect(await memoryRead("/memory/missing.md")).toBeNull();
     });
   });
-
-  it("routes through onRead/onWrite handlers when present", async () => {
-    const reads: string[] = [];
-    const writes: Array<[string, string]> = [];
-    const decoder = new TextDecoder();
-    const config = makeConfig({
-      handlers: {
-        onRead: (path) => {
-          reads.push(path);
-          return new TextEncoder().encode("handler value");
-        },
-        onWrite: (path, bytes) => {
-          writes.push([path, decoder.decode(bytes)]);
-        },
-      },
-    });
-    await withMemory(config, async () => {
-      await memoryWrite("/memory/a.md", "payload");
-      expect(await memoryRead("/memory/a.md")).toBe("handler value");
-    });
-    expect(reads).toEqual(["a.md"]);
-    expect(writes).toEqual([["a.md", "payload"]]);
-  });
 });
 
 describe("memoryList", () => {

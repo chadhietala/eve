@@ -57,11 +57,10 @@ export type ResolvedInstructions = Readonly<
  * Authored memory layer resolved from `memory.md` or `memory.{ts,...}`.
  *
  * Carries the durable projection — the mount `root`, optional orientation
- * text, and the static `dream` (consolidation) config — plus presence flags
- * for the author-supplied store and escape-hatch handlers. The live store,
- * handler functions, and `dream.run` override resolved from the module map are
- * wired in by memory-config seeding at turn time; they are not held on the
- * resolved agent.
+ * text, and the static `dream` (consolidation) config — plus a presence flag
+ * for the author-supplied store. The live store and `dream.run` override
+ * resolved from the module map are wired in by memory-config seeding at turn
+ * time; they are not held on the resolved agent.
  */
 export type ResolvedMemory = Readonly<
   SourceRef & {
@@ -69,7 +68,6 @@ export type ResolvedMemory = Readonly<
     root: string;
     orientation?: string;
     hasStore: boolean;
-    handlerNames: readonly ("onRead" | "onWrite" | "onList" | "onGrep")[];
     dream?: CompiledDream;
   } & (Omit<MarkdownSourceRef<undefined>, "definition"> | ModuleSourceRef)
 >;

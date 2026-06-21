@@ -71,7 +71,6 @@ describe("memory discovery + compile", () => {
       root: "/memory",
       orientation: "Remember the user prefers metric units.",
       hasStore: false,
-      handlerNames: [],
       sourceId: "memory.md",
       sourceKind: "markdown",
     });

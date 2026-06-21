@@ -39,7 +39,7 @@ export const ROOT_COMPILED_AGENT_NODE_ID = "__root__";
 /**
  * Current compiled manifest schema version.
  */
-export const COMPILED_AGENT_MANIFEST_VERSION = 32;
+export const COMPILED_AGENT_MANIFEST_VERSION = 33;
 
 /**
  * Compiled channel entry preserved in the compiled manifest.
@@ -124,12 +124,11 @@ export type CompiledInstructions = z.infer<typeof compiledInstructionsSchema>;
  * Normalized authored memory layer preserved in the compiled manifest.
  *
  * Serializable projection of a {@link MemoryDefinition}: the mount `root`,
- * the optional `orientation` text, and — for the `memory.{ts,...}` form — presence
- * flags recording whether the author supplied a custom `store` or any of the
- * `onRead`/`onWrite`/`onList`/`onGrep` escape hatches. The live store and
- * handler functions are not serialized; they are resolved from the module
- * map at runtime via {@link ModuleSourceRef.logicalPath}, mirroring how
- * tools and connections resolve their authored modules.
+ * the optional `orientation` text, and — for the `memory.{ts,...}` form — a
+ * presence flag recording whether the author supplied a custom `store`. The
+ * live store is not serialized; it is resolved from the module map at runtime
+ * via {@link ModuleSourceRef.logicalPath}, mirroring how tools and connections
+ * resolve their authored modules.
  */
 export type CompiledMemory = z.infer<typeof compiledMemorySchema>;
 
@@ -405,12 +404,6 @@ const compiledMemorySchema = z
     orientation: z.string().optional(),
     /** Whether the author supplied a custom backing store (`.ts` form only). */
     hasStore: z.boolean(),
-    /**
-     * Names of the author-supplied escape-hatch handlers present on the
-     * `defineMemory` export. Empty for the markdown form. The live functions
-     * resolve from the module map at runtime.
-     */
-    handlerNames: z.array(z.enum(["onRead", "onWrite", "onList", "onGrep"])).readonly(),
     /**
      * Static memory consolidation ("dream") config. Present when the author
      * declared a `dream`; the live `run` override resolves from the module map

@@ -3,7 +3,7 @@
  *
  * {@link MemoryConfigKey} carries the resolved per-turn memory configuration —
  * a live {@link MemoryStore} instance, the computed namespace, the mount root,
- * the orientation, and the author escape-hatch handlers. Because it holds a live
+ * and the orientation. Because it holds a live
  * (non-serializable) store, the key is intentionally **codec-less**: it is a
  * transient value re-seeded each turn from the compiled memory definition, and
  * is never persisted at a step boundary. The compiled definition (durable) is
@@ -11,7 +11,7 @@
  */
 
 import { ContextKey } from "#context/key.js";
-import type { DreamContext, MemoryDefinition } from "#public/definitions/memory.js";
+import type { DreamContext } from "#public/definitions/memory.js";
 import type { MemoryStore } from "#runtime/memory/store.js";
 import type { MemoryNamespace } from "#runtime/memory/types.js";
 
@@ -55,13 +55,6 @@ export interface MemoryConfig {
    * Absent until a consolidation has written one.
    */
   readonly memoryIndex?: string;
-
-  /**
-   * Author-supplied escape hatches overriding the framework's default IO. When
-   * absent, the framework drives the default store-backed behavior (convention
-   * over configuration).
-   */
-  readonly handlers?: Pick<MemoryDefinition, "onRead" | "onWrite" | "onList" | "onGrep">;
 
   /**
    * Memory consolidation ("dream") configuration: the static fields the author
