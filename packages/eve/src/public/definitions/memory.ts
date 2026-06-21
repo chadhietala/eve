@@ -25,11 +25,11 @@ export function isBrandedMemoryDefinition(value: unknown): boolean {
 }
 
 /**
- * The mounted `/memory` area as seen by a {@link DreamConfig.run} pipeline:
- * the consolidation's *output*. Reads and writes resolve against the
- * agent-scoped persistent memory namespace — never the raw-sessions area —
- * so a dream can fold sessions into the curated memory without ever mutating
- * its own source material.
+ * One store's curated area as seen by a {@link DreamConfig.run} pipeline:
+ * the consolidation's *output*. Reads and writes resolve against that store's
+ * curated namespace (the area mounted under `/mnt/memory/<store>`) — never the
+ * raw-transcripts area — so a dream can fold sessions into the curated memory
+ * without ever mutating its own source material.
  */
 export interface DreamMemoryAccess {
   /** Reads the memory file at `path`, or `null` when it does not exist. */
@@ -67,22 +67,22 @@ export interface DreamContext {
   readonly sessions: readonly { readonly sessionId: string; readonly transcript: string }[];
 
   /**
-   * Read/write access to the mounted `/memory` area — the dream's output. This
-   * is the only surface a dream writes to; the {@link DreamContext.sessions}
-   * area is read-only.
+   * Read/write access to the store's curated area (mounted under
+   * `/mnt/memory/<store>`) — the dream's output. This is the only surface a
+   * dream writes to; the {@link DreamContext.sessions} area is read-only.
    */
   readonly memory: DreamMemoryAccess;
 }
 
 /**
- * Configures the memory consolidation ("dream") pipeline that folds raw
- * session transcripts into the agent's curated `/memory` area.
+ * Configures the memory consolidation ("dream") pipeline that folds each `rw`
+ * store's raw session transcripts into that store's curated area.
  *
  * Every field is optional. With no `run`, the framework's built-in default
  * synthesis runs — a single guided model call that merges new sessions into
  * the existing memory. Provide `run` to replace the pipeline wholesale (e.g.
- * a knowledge-graph or RAG indexer). The dream is invoked on a trigger wired
- * up in a later phase; this config only describes the logic, not when it fires.
+ * a knowledge-graph or RAG indexer). It runs once per `rw` store. When the dream
+ * fires is set by {@link DreamConfig.schedule}; this config describes the logic.
  */
 export interface DreamConfig {
   /** Optional model id for synthesis; defaults to the agent's model. */
@@ -95,8 +95,9 @@ export interface DreamConfig {
   readonly instructions?: string;
 
   /**
-   * When to consolidate. Consumed by the consolidation trigger (a later
-   * phase); carried here as static config so it compiles into the manifest.
+   * When to consolidate. An idle window re-arms a durable per-agent timer while
+   * the agent is active and fires once it goes idle; a cron backstop sweeps due
+   * timers; `minSessions` sets a floor before a dream runs.
    */
   readonly schedule?: {
     /** Consolidate after the agent has been idle this many milliseconds. */
@@ -123,8 +124,8 @@ export interface DreamConfig {
  * A store is a {@link MemoryStore} backend mounted at a path under
  * `/mnt/memory` with an access level. The `backend` is both the storage and
  * the sharing key: two agents that mount the same backend share the store's
- * curated memory and its transcripts (the namespace keys on the store name, not
- * the agent id).
+ * curated memory and its transcripts — regardless of what each names it
+ * locally. The name is a mount alias, not the sharing key.
  */
 export interface StoreMount {
   /** The backing store — its storage, and the key two agents share by reusing. */
@@ -157,9 +158,9 @@ export interface StoreMount {
  * memory source at all) the agent has no memory.
  *
  * Memory is a filesystem: the framework routes file-tool operations under
- * `/mnt/memory/<store-path>` to that store's backend, namespaced by the store
- * name. Non-filesystem access patterns (search/RAG/knowledge-graph) are built
- * with eve's normal tool system, not the memory layer.
+ * `/mnt/memory/<store-path>` to that store's backend. Non-filesystem access
+ * patterns (search/RAG/knowledge-graph) are built with eve's normal tool
+ * system, not the memory layer.
  */
 export interface MemoryDefinition {
   /**

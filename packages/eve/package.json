@@ -191,6 +191,11 @@
       "import": "./dist/src/public/instrumentation/index.js",
       "default": "./dist/src/public/instrumentation/index.js"
     },
+    "./memory": {
+      "types": "./dist/src/public/memory/index.d.ts",
+      "import": "./dist/src/public/memory/index.js",
+      "default": "./dist/src/public/memory/index.js"
+    },
     "./schedules": {
       "types": "./dist/src/public/schedules/index.d.ts",
       "import": "./dist/src/public/schedules/index.js",
