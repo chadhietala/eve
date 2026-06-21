@@ -91,19 +91,22 @@ The `backend` is the store's identity. The name is only a local mount alias.
 
 Two agents share a store by pointing at the **same backend** — regardless of what each calls it locally. Sharing is by backend identity, never by name or agent id. Give two agents the same `fsStore` directory (or the same custom backend) and they read and write the same curated memory and feed the same consolidation:
 
-```ts
-// agent A
-stores: {
-  notes: {
-    backend: fsStore("./.eve/team");
-  }
-}
-// agent B — different local name, SAME backend → shared
-stores: {
-  shared: {
-    backend: fsStore("./.eve/team");
-  }
-}
+```ts title="agent/memory.ts"
+import { defineMemory, fsStore } from "eve/memory";
+
+// Agent A
+export default defineMemory({
+  stores: { notes: { backend: fsStore("./.eve/team") } },
+});
+```
+
+```ts title="other-agent/memory.ts"
+import { defineMemory, fsStore } from "eve/memory";
+
+// Agent B — different local name, SAME backend directory → shared
+export default defineMemory({
+  stores: { shared: { backend: fsStore("./.eve/team") } },
+});
 ```
 
 Conversely, two separate backend instances never share, even under the same name.
