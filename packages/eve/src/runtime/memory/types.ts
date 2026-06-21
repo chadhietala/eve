@@ -40,6 +40,20 @@ export interface MemoryEntry {
 }
 
 /**
+ * One immutable, historical version of a stored path.
+ *
+ * `version` is the content-address of that revision — `sha256(content)` hex,
+ * the same digest used as the compare-and-swap precondition. `modifiedAt` is
+ * the ISO-8601 timestamp the version was recorded. Versions are listed
+ * newest-first; "restore" is read an old version's bytes and write them back
+ * (which records a fresh version equal to the old content).
+ */
+export interface MemoryVersion {
+  readonly version: string;
+  readonly modifiedAt: string;
+}
+
+/**
  * An opaque, deterministic idempotency key for a single write.
  *
  * Derived from the namespace, the deterministic in-turn `(turnId, seq)`

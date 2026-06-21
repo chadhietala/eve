@@ -21,7 +21,15 @@ import { loadContext } from "#context/container.js";
 import { SessionKey } from "#context/keys.js";
 import { type MemoryConfig, type MountedStore, MemoryConfigKey } from "#runtime/memory/keys.js";
 import { resolveStoreNamespace } from "#runtime/memory/namespace.js";
-import { buildWriteKey } from "#runtime/memory/write-key.js";
+import { MemoryConflictError } from "#runtime/memory/store.js";
+import { buildWriteKey, sha256 } from "#runtime/memory/write-key.js";
+
+/**
+ * How many times a redirected write re-reads the head and retries after a
+ * compare-and-swap conflict before giving up. Bounded so a pathological
+ * write-storm surfaces a clear error instead of spinning forever.
+ */
+const MAX_CAS_ATTEMPTS = 3;
 
 const decoder = new TextDecoder();
 const encoder = new TextEncoder();
@@ -129,6 +137,16 @@ export async function memoryRead(path: string): Promise<string | null> {
  *
  * The idempotency key is content-addressed via `seq: 0` (partitioned by turn id
  * when available), so a replayed identical write collapses to one.
+ *
+ * Writes are CONFLICT-AWARE: the redirect reads the current head, derives an
+ * `expectedVersion`, and writes under that compare-and-swap precondition. If a
+ * concurrent writer moved the head between the read and the write the store
+ * throws {@link MemoryConflictError}; the redirect re-reads the (now newer)
+ * head and retries, up to {@link MAX_CAS_ATTEMPTS} times. The model's content
+ * is fixed across retries, so this is conflict-aware last-write-wins: the last
+ * writer still wins the head, but because every write is versioned no write is
+ * ever silently lost — the clobbered revision survives in the version history.
+ * Exhausting retries surfaces a clear error rather than risking a lost write.
  */
 export async function memoryWrite(path: string, content: string): Promise<void> {
   const config = getMemoryConfig();
@@ -150,7 +168,23 @@ export async function memoryWrite(path: string, content: string): Promise<void> 
   const bytes = encoder.encode(content);
   const turnId = loadContext().get(SessionKey)?.turn.id ?? "";
   const writeKey = buildWriteKey({ namespace: ns, turnId, seq: 0, content });
-  await target.store.backend.write(ns, target.relPath, bytes, writeKey);
+
+  for (let attempt = 1; attempt <= MAX_CAS_ATTEMPTS; attempt += 1) {
+    const current = await target.store.backend.read(ns, target.relPath);
+    const expected = current === null ? null : sha256(current);
+    try {
+      await target.store.backend.write(ns, target.relPath, bytes, writeKey, {
+        expectedVersion: expected,
+      });
+      return;
+    } catch (error) {
+      // Only a CAS conflict is retryable — a racing writer moved the head. Any
+      // other failure (e.g. an I/O error) propagates untouched.
+      if (!(error instanceof MemoryConflictError) || attempt === MAX_CAS_ATTEMPTS) {
+        throw error;
+      }
+    }
+  }
 }
 
 /**

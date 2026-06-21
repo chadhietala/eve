@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { ContextContainer, contextStorage } from "#context/container.js";
 import { type MemoryConfig, type MountedStore, MemoryConfigKey } from "#runtime/memory/keys.js";
 import { InMemoryMemoryStore } from "#runtime/memory/store.js";
+import type { MemoryStore, MemoryWriteOptions } from "#runtime/memory/store.js";
+import type { MemoryNamespace, WriteKey } from "#runtime/memory/types.js";
 import { resolveStoreNamespace, resolveTranscriptsNamespace } from "#runtime/memory/namespace.js";
+import { sha256 } from "#runtime/memory/write-key.js";
 import {
   memoryGrep,
   memoryList,
@@ -33,6 +36,66 @@ async function withMemory<T>(config: MemoryConfig | undefined, fn: () => Promise
     ctx.set(MemoryConfigKey, config);
   }
   return contextStorage.run(ctx, fn) as Promise<T>;
+}
+
+/**
+ * Wraps a real store and, on the first `n` write calls only, mutates the head
+ * out from under the redirect *just before* delegating — simulating a racing
+ * writer that lands between the redirect's read-of-head and its CAS write. The
+ * delegated write then sees a stale `expectedVersion` and conflicts, exercising
+ * the redirect's retry loop. Once the injection budget is spent, writes pass
+ * straight through.
+ */
+class RacingWriterStore implements MemoryStore {
+  conflictsInjected = 0;
+  #remaining: number;
+  readonly #inner: InMemoryMemoryStore;
+  readonly #racer: () => Uint8Array;
+  #key = 0;
+
+  constructor(inner: InMemoryMemoryStore, injectCount: number, racer: () => Uint8Array) {
+    this.#inner = inner;
+    this.#remaining = injectCount;
+    this.#racer = racer;
+  }
+
+  read(ns: MemoryNamespace, path: string): Promise<Uint8Array | null> {
+    return this.#inner.read(ns, path);
+  }
+
+  async write(
+    ns: MemoryNamespace,
+    path: string,
+    bytes: Uint8Array,
+    key: WriteKey,
+    options?: MemoryWriteOptions,
+  ): Promise<void> {
+    if (this.#remaining > 0) {
+      this.#remaining -= 1;
+      this.conflictsInjected += 1;
+      // A concurrent writer moves the head under a fresh key right before we
+      // delegate, so the caller's `expectedVersion` is now stale.
+      this.#key += 1;
+      await this.#inner.write(ns, path, this.#racer(), `racer-${this.#key}`);
+    }
+    await this.#inner.write(ns, path, bytes, key, options);
+  }
+
+  list(ns: MemoryNamespace, prefix: string) {
+    return this.#inner.list(ns, prefix);
+  }
+
+  remove(ns: MemoryNamespace, path: string, key: WriteKey): Promise<void> {
+    return this.#inner.remove(ns, path, key);
+  }
+
+  listVersions(ns: MemoryNamespace, path: string) {
+    return this.#inner.listVersions(ns, path);
+  }
+
+  readVersion(ns: MemoryNamespace, path: string, version: string) {
+    return this.#inner.readVersion(ns, path, version);
+  }
 }
 
 describe("shouldRedirectToMemory", () => {
@@ -176,5 +239,60 @@ describe("memoryList / memoryGrep", () => {
         { line: "beta needle", lineNumber: 2, path: "/mnt/memory/notes/n.md" },
       ]);
     });
+  });
+});
+
+describe("transparent compare-and-swap on write", () => {
+  it("versions a normal write", async () => {
+    const store = mountStore({ name: "notes" });
+    await withMemory(makeConfig([store]), async () => {
+      await memoryWrite("/mnt/memory/notes/a.md", "hello");
+    });
+    const versions = await store.backend.listVersions(resolveStoreNamespace("notes"), "a.md");
+    expect(versions.map((v) => v.version)).toEqual([sha256("hello")]);
+  });
+
+  it("retries after a concurrent change and ultimately writes; both writes are in history", async () => {
+    const inner = new InMemoryMemoryStore();
+    // Inject exactly one racing write of "concurrent" before the redirect's CAS.
+    const racing = new RacingWriterStore(inner, 1, () => new TextEncoder().encode("concurrent"));
+    const store = mountStore({ name: "notes", backend: racing });
+
+    await withMemory(makeConfig([store]), async () => {
+      await memoryWrite("/mnt/memory/notes/a.md", "model-output");
+    });
+
+    expect(racing.conflictsInjected).toBe(1);
+    const ns = resolveStoreNamespace("notes");
+    // The model's content won the head (conflict-aware last-write-wins).
+    expect(new TextDecoder().decode((await racing.read(ns, "a.md")) as Uint8Array)).toBe(
+      "model-output",
+    );
+    // Both the racing write and the model write survive in the version trail.
+    const versions = await racing.listVersions(ns, "a.md");
+    expect(versions.map((v) => v.version)).toEqual([sha256("model-output"), sha256("concurrent")]);
+  });
+
+  it("surfaces a clear error when CAS retries are exhausted", async () => {
+    const inner = new InMemoryMemoryStore();
+    // A racer that conflicts on every attempt (more than the retry budget).
+    let n = 0;
+    const racing = new RacingWriterStore(inner, 10, () => new TextEncoder().encode(`race-${n++}`));
+    const store = mountStore({ name: "notes", backend: racing });
+
+    await withMemory(makeConfig([store]), async () => {
+      await expect(memoryWrite("/mnt/memory/notes/a.md", "model-output")).rejects.toThrow(
+        /conflict/i,
+      );
+    });
+    expect(racing.conflictsInjected).toBe(3);
+  });
+
+  it("a ro store still rejects before any CAS read/write", async () => {
+    const store = mountStore({ name: "facts", access: "ro" });
+    await withMemory(makeConfig([store]), async () => {
+      await expect(memoryWrite("/mnt/memory/facts/a.md", "x")).rejects.toThrow(/read-only/);
+    });
+    expect(await store.backend.listVersions(resolveStoreNamespace("facts"), "a.md")).toEqual([]);
   });
 });

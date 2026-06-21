@@ -1,11 +1,23 @@
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { MemoryStore } from "#runtime/memory/store.js";
-import type { MemoryEntry, MemoryNamespace, WriteKey } from "#runtime/memory/types.js";
+import {
+  MemoryConflictError,
+  type MemoryStore,
+  type MemoryWriteOptions,
+} from "#runtime/memory/store.js";
+import type {
+  MemoryEntry,
+  MemoryNamespace,
+  MemoryVersion,
+  WriteKey,
+} from "#runtime/memory/types.js";
+import { sha256 } from "#runtime/memory/write-key.js";
 
 const DEFAULT_BASE_DIR = ".eve/memory";
 const APPLIED_KEYS_FILE = ".applied-keys.json";
+/** Suffix of the sidecar directory holding a path's immutable versions. */
+const VERSIONS_SUFFIX = ".versions";
 
 /**
  * Maps one logical path segment to a single filesystem-safe segment.
@@ -46,6 +58,22 @@ function sanitizePath(path: string): string {
  * performed before the ledger is updated, so a crash between the two leaves a
  * key un-recorded (the mutation may re-run, which is safe under PUT/delete
  * semantics) rather than recording a key whose mutation never landed.
+ *
+ * Versioning is durable too: every write that changes content snapshots the
+ * new bytes into a sidecar directory `<path>.versions/<version>` (the version
+ * id is `sha256(content)` hex). The live file remains the head; the sidecar is
+ * the immutable audit trail read back by {@link FsMemoryStore.listVersions}
+ * and {@link FsMemoryStore.readVersion}. Compare-and-swap reads the head
+ * file's sha and compares it to the caller's `expectedVersion`.
+ *
+ * RACE CAVEAT: this store is correct for a single writer/sweeper. CAS is a
+ * read-head-then-write sequence, not an atomic OS primitive, so two processes
+ * racing the same path can both observe the same head and both write — the
+ * second clobbers the first's head but BOTH revisions are preserved in the
+ * sidecar (no version is lost, only the head ordering is racy). The intended
+ * deployment serializes writers per namespace; the redirect's bounded CAS
+ * retry narrows the window further but does not close it for true concurrent
+ * filesystem writers.
  */
 export class FsMemoryStore implements MemoryStore {
   readonly #baseDir: string;
@@ -71,7 +99,13 @@ export class FsMemoryStore implements MemoryStore {
     }
   }
 
-  async write(ns: MemoryNamespace, path: string, bytes: Uint8Array, key: WriteKey): Promise<void> {
+  async write(
+    ns: MemoryNamespace,
+    path: string,
+    bytes: Uint8Array,
+    key: WriteKey,
+    options?: MemoryWriteOptions,
+  ): Promise<void> {
     const namespaceDir = this.#namespaceDir(ns);
     const applied = await this.#readAppliedKeys(namespaceDir);
     if (applied.has(key)) {
@@ -79,8 +113,23 @@ export class FsMemoryStore implements MemoryStore {
     }
 
     const filePath = this.#filePath(ns, path);
-    await mkdir(parentOf(filePath), { recursive: true });
-    await writeFile(filePath, bytes);
+    const current = await this.read(ns, path);
+    const head = current === null ? null : sha256(current);
+
+    if (options?.expectedVersion !== undefined && options.expectedVersion !== head) {
+      // CAS precondition failed — the head moved since the caller read it. Do
+      // NOT record the key, so the caller can retry with a fresh expectation.
+      throw new MemoryConflictError(path, options.expectedVersion, head);
+    }
+
+    const version = sha256(bytes);
+    // Writing the content the head already holds changes nothing: record no new
+    // version (but still consume the write key below for idempotency).
+    if (head !== version) {
+      await mkdir(parentOf(filePath), { recursive: true });
+      await writeFile(filePath, bytes);
+      await this.#recordVersion(filePath, version, bytes);
+    }
 
     applied.add(key);
     await this.#writeAppliedKeys(namespaceDir, applied);
@@ -105,6 +154,64 @@ export class FsMemoryStore implements MemoryStore {
 
     applied.add(key);
     await this.#writeAppliedKeys(namespaceDir, applied);
+  }
+
+  async listVersions(ns: MemoryNamespace, path: string): Promise<readonly MemoryVersion[]> {
+    const versionsDir = `${this.#filePath(ns, path)}${VERSIONS_SUFFIX}`;
+    let dirents;
+    try {
+      dirents = await readdir(versionsDir, { withFileTypes: true });
+    } catch (error) {
+      if (isNotFound(error)) {
+        return [];
+      }
+      throw error;
+    }
+
+    const versions: MemoryVersion[] = [];
+    for (const dirent of dirents) {
+      if (!dirent.isFile()) {
+        continue;
+      }
+      const fileStat = await stat(join(versionsDir, dirent.name));
+      versions.push({ modifiedAt: fileStat.mtime.toISOString(), version: dirent.name });
+    }
+    // Newest first: the version file's mtime is when that revision was recorded.
+    versions.sort((a, b) =>
+      a.modifiedAt < b.modifiedAt ? 1 : a.modifiedAt > b.modifiedAt ? -1 : 0,
+    );
+    return versions;
+  }
+
+  async readVersion(
+    ns: MemoryNamespace,
+    path: string,
+    version: string,
+  ): Promise<Uint8Array | null> {
+    const versionPath = join(
+      `${this.#filePath(ns, path)}${VERSIONS_SUFFIX}`,
+      sanitizeSegment(version),
+    );
+    try {
+      const buffer = await readFile(versionPath);
+      return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    } catch (error) {
+      if (isNotFound(error)) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Snapshots `bytes` into the path's version sidecar as an immutable revision.
+   * The version id is content-addressed, so re-recording an identical revision
+   * just rewrites the same file — harmless and idempotent.
+   */
+  async #recordVersion(filePath: string, version: string, bytes: Uint8Array): Promise<void> {
+    const versionsDir = `${filePath}${VERSIONS_SUFFIX}`;
+    await mkdir(versionsDir, { recursive: true });
+    await writeFile(join(versionsDir, sanitizeSegment(version)), bytes);
   }
 
   #namespaceDir(ns: MemoryNamespace): string {
@@ -139,6 +246,11 @@ export class FsMemoryStore implements MemoryStore {
 
     for (const dirent of dirents) {
       if (relativeDir === "" && dirent.name === APPLIED_KEYS_FILE) {
+        continue;
+      }
+      // Version sidecars are infrastructure, never logical entries: a directory
+      // `<name>.versions` holds the immutable revisions of the sibling file.
+      if (dirent.isDirectory() && dirent.name.endsWith(VERSIONS_SUFFIX)) {
         continue;
       }
       const relativePath = relativeDir === "" ? dirent.name : `${relativeDir}/${dirent.name}`;
