@@ -7,7 +7,14 @@ import { MemoryConfigKey } from "#runtime/memory/keys.js";
 import type { MemoryStore } from "#runtime/memory/store.js";
 import { loadResolvedModuleExport, ResolveAgentError } from "#runtime/resolve-helpers.js";
 import type { ResolvedMemory } from "#runtime/types.js";
+import type { CompiledRuntimeAgentBundle } from "#runtime/sessions/compiled-agent-cache.js";
 import { BundleKey } from "#runtime/sessions/runtime-context-keys.js";
+
+/** The bundle fields config construction reads — the agent, module map, node id. */
+type MemoryConfigBundle = Pick<
+  CompiledRuntimeAgentBundle,
+  "resolvedAgent" | "moduleMap" | "nodeId"
+>;
 
 type DreamRun = (ctx: DreamContext) => void | Promise<void>;
 
@@ -96,25 +103,26 @@ export async function resolveMemoryModule(
 }
 
 /**
- * Seeds {@link MemoryConfigKey} for the active step when the resolved agent
- * declares a memory layer.
+ * Builds a {@link MemoryConfig} from a compiled bundle **without** a turn
+ * context (no {@link ContextContainer}).
  *
- * Runs on every step (the {@link MemoryConfigKey} is codec-less and transient,
- * so it must be rebuilt each step rather than carried across step boundaries).
- * Reads the resolved memory off the active {@link BundleKey} bundle, derives the
- * agent-scoped mounted and raw-sessions namespaces from the agent id, and — for
- * a module-backed (`memory.{ts,...}`) definition — resolves the live store and
- * escape-hatch handlers from the module map. When the agent has no memory
- * layer, nothing is seeded so non-memory agents are unaffected.
+ * Reads the resolved memory off the bundle, derives the agent-scoped mounted
+ * and raw-sessions namespaces from the agent id, and — for a module-backed
+ * (`memory.{ts,...}`) definition — resolves the live store, escape-hatch
+ * handlers, and `dream.run` override from the module map. Returns `undefined`
+ * when the agent declares no memory layer.
+ *
+ * This is the shared construction the turn path ({@link seedMemoryConfig}) and
+ * the background consolidation path both build on, so an off-turn dream sees
+ * exactly the same store, namespaces, and dream config a turn would — without
+ * the per-step recall read, which only the turn path needs.
  */
-export async function seedMemoryConfig(ctx: ContextContainer): Promise<void> {
-  const bundle = ctx.get(BundleKey);
-  if (bundle === undefined) {
-    return;
-  }
+export async function buildMemoryConfigForBundle(
+  bundle: MemoryConfigBundle,
+): Promise<MemoryConfig | undefined> {
   const memory = bundle.resolvedAgent.memory;
   if (memory === undefined) {
-    return;
+    return undefined;
   }
 
   const input: Mutable<BuildMemoryConfigInput> = {
@@ -146,11 +154,36 @@ export async function seedMemoryConfig(ctx: ContextContainer): Promise<void> {
     input.dream = dream;
   }
 
-  const config = buildMemoryConfig(input);
+  return buildMemoryConfig(input);
+}
+
+/**
+ * Seeds {@link MemoryConfigKey} for the active step when the resolved agent
+ * declares a memory layer.
+ *
+ * Runs on every step (the {@link MemoryConfigKey} is codec-less and transient,
+ * so it must be rebuilt each step rather than carried across step boundaries).
+ * Delegates config construction to {@link buildMemoryConfigForBundle} so the
+ * turn path and the background path build the config identically, then layers on
+ * the turn-only recall read. When the agent has no memory layer, nothing is
+ * seeded so non-memory agents are unaffected.
+ */
+export async function seedMemoryConfig(ctx: ContextContainer): Promise<void> {
+  const bundle = ctx.get(BundleKey);
+  if (bundle === undefined) {
+    return;
+  }
+
+  const config = await buildMemoryConfigForBundle(bundle);
+  if (config === undefined) {
+    return;
+  }
 
   // Recall: surface the consolidated memory index in the system prompt from
   // turn one, so the agent doesn't have to discover it. The rest of memory
-  // stays grep/read-on-demand through the file tools.
+  // stays grep/read-on-demand through the file tools. This read is turn-only —
+  // the background consolidation path never seeds the prompt, so it does not run
+  // it.
   const index = await config.store.read(config.namespace, MEMORY_INDEX_PATH);
   ctx.set(
     MemoryConfigKey,

@@ -4,6 +4,7 @@ import type { FrameworkContextProvider } from "#context/provider.js";
 import { connectionProvider } from "#context/providers/connection.js";
 import { sandboxProvider } from "#context/providers/sandbox.js";
 import { sessionProvider } from "#context/providers/session.js";
+import { maybeArmConsolidation } from "#context/arm-consolidation-step.js";
 import { seedMemoryConfig } from "#context/seed-memory-config.js";
 import { maybeDumpSession } from "#context/session-dump-step.js";
 
@@ -68,6 +69,12 @@ export async function withContextScope<T>(
   // Persist the step's transcript to memory so the agent can grep/list/read its
   // own past sessions. No-op for non-memory agents (no MemoryConfig seeded).
   await maybeDumpSession(ctx, committed);
+
+  // Slide the agent's idle-consolidation timer forward on each active step, so
+  // the dream fires only after the user has gone quiet for `dream.schedule.idleMs`.
+  // No-op when the agent declares no idle schedule. `Date.now()` is read here at
+  // the runtime boundary and injected into the clock-free arm logic.
+  await maybeArmConsolidation(ctx, Date.now());
 
   if (committed === scopeResult.session) {
     return scopeResult;
