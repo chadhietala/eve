@@ -47,9 +47,12 @@ export async function maybeArmConsolidation(
     return;
   }
 
-  // The consolidation timer is keyed per agent (one sliding deadline per agent).
-  // The store-keyed config no longer carries an agent id, so it comes from the
-  // bundle. Per-store timer keying is a later phase.
+  // The consolidation timer is keyed per agent (one sliding deadline per agent),
+  // not per store: the sweep that fires it consolidates every `rw` store this
+  // agent mounts in one pass. The store-keyed config carries no agent id, so it
+  // comes from the bundle. A store shared by several agents may be consolidated
+  // by more than one agent's timer; that is safe (versioned, content-addressed
+  // writes) and is the intended design, not a gap.
   const agentId = ctx.get(BundleKey)?.resolvedAgent.config.name;
   if (agentId === undefined) {
     return;

@@ -29,7 +29,9 @@ import {
   OPTIONAL_ENGINE_PACKAGES_BY_BACKEND_NAME,
 } from "#internal/nitro/host/optional-engine-dependency-plugin.js";
 import { addNitroRoutingImportSpecifierPlugin } from "#internal/nitro/host/nitro-routing-import-specifier-plugin.js";
+import { registerConsolidationTaskHandler } from "#internal/nitro/host/consolidation-task-route.js";
 import { registerScheduleTaskHandlers } from "#internal/nitro/host/schedule-task-routes.js";
+import { createConsolidationRegistration } from "#runtime/memory/consolidation-registration.js";
 import { SERVER_EXTERNAL_PACKAGES } from "#internal/nitro/host/server-external-packages.js";
 import type { NitroBuildSurface, PreparedApplicationHost } from "#internal/nitro/host/types.js";
 import { createEveVercelOptions } from "#internal/nitro/host/vercel-build-output-config.js";
@@ -653,6 +655,15 @@ export async function createApplicationNitro(
   // schedules.
   const shouldRegisterScheduleTasks =
     !dev && includesApplicationSurface(surface) && preparedHost.scheduleRegistrations.length > 0;
+  // The consolidation backstop is framework-owned, not authored: it registers
+  // whenever any agent in the graph declares a memory `dream`, independently of
+  // authored schedules. Like authored schedules it is production-only — `eve dev`
+  // never arms Nitro cron, so the dev path relies on the durable idle timer
+  // firing on the next active step rather than a background sweep.
+  const consolidationRegistration =
+    !dev && includesApplicationSurface(surface)
+      ? createConsolidationRegistration(preparedHost.compileResult.manifest)
+      : undefined;
   const preset = resolveNitroPreset(dev);
   const configuredBackendNames = collectConfiguredSandboxBackendNames(
     preparedHost.compileResult.manifest,
@@ -801,24 +812,39 @@ export async function createApplicationNitro(
     });
   }
 
-  if (shouldRegisterScheduleTasks) {
+  if (shouldRegisterScheduleTasks || consolidationRegistration !== undefined) {
     // Replace Vercel's default `/_vercel/cron` path with an unguessable
     // per-build route so users do not need to configure `CRON_SECRET` to
     // protect the cron endpoint. No-op when the Vercel preset is not in
-    // use (e.g. dev mode), where the cron route is never registered.
+    // use (e.g. dev mode), where the cron route is never registered. Shared by
+    // both authored schedules and the consolidation backstop — any cron entry
+    // is dispatched through this one route.
     applyEveCronHandlerRoute(nitro);
 
     const artifactsConfig: NitroArtifactsConfigInput = createNitroArtifactsConfig({
       appRoot: preparedHost.appRoot,
       dev: nitro.options.dev,
     });
-    registerScheduleTaskHandlers(nitro, {
-      artifactsConfig,
-      dispatchModulePath: resolvePackageSourceFilePath(
-        "src/internal/nitro/routes/schedule-task.ts",
-      ),
-      registrations: preparedHost.scheduleRegistrations,
-    });
+
+    if (shouldRegisterScheduleTasks) {
+      registerScheduleTaskHandlers(nitro, {
+        artifactsConfig,
+        dispatchModulePath: resolvePackageSourceFilePath(
+          "src/internal/nitro/routes/schedule-task.ts",
+        ),
+        registrations: preparedHost.scheduleRegistrations,
+      });
+    }
+
+    if (consolidationRegistration !== undefined) {
+      registerConsolidationTaskHandler(nitro, {
+        artifactsConfig,
+        dispatchModulePath: resolvePackageSourceFilePath(
+          "src/internal/nitro/routes/consolidate-task.ts",
+        ),
+        registration: consolidationRegistration,
+      });
+    }
   }
   await configureNitroRoutes(nitro, preparedHost, {
     surface,

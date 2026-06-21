@@ -25,8 +25,17 @@ import { resolveNitroCompiledArtifactsSource } from "#internal/nitro/routes/runt
  * {@link FsTimerStore}, and delegates to {@link runDueConsolidations} for the
  * fully-injected, unit-tested orchestration.
  *
- * Wiring-only: this entrypoint typechecks and builds, but the cron/Nitro
- * registration that invokes it is not exercised in this environment.
+ * Registered as a cron-driven Nitro task by `registerConsolidationTaskHandler`
+ * (see `createConsolidationRegistration` / `create-application-nitro.ts`)
+ * whenever any agent in the bundle declares a memory `dream`. The cron fires
+ * this sweep on a coarse cadence; the durable per-agent idle timers carry the
+ * real timing. The keying is per-agent (one idle timer → that agent's `rw`
+ * stores); a store shared by several agents may be consolidated by more than
+ * one agent's sweep, which is safe because memory writes are versioned and
+ * content-addressed. This is the intended design, not a gap.
+ *
+ * Time is read at this Nitro boundary (`Date.now()` in the generated task
+ * `run`) and injected downstream, so the orchestration stays clock-pure.
  */
 export async function dispatchConsolidationSweep(
   config: NitroArtifactsConfig,

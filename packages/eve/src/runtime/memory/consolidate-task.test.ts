@@ -16,6 +16,7 @@ import {
 import type { MemoryConfig, MountedStore } from "#runtime/memory/keys.js";
 import { resolveStoreNamespace, resolveTranscriptsNamespace } from "#runtime/memory/namespace.js";
 import { InMemoryMemoryStore } from "#runtime/memory/store.js";
+import type { MemoryNamespace } from "#runtime/memory/types.js";
 import { InMemoryTimerStore } from "#runtime/timer/store.js";
 import { armTimer } from "#runtime/timer/timer.js";
 
@@ -25,6 +26,25 @@ const STORE = "notes";
 
 const CURATED_NS = resolveStoreNamespace(STORE);
 const TRANSCRIPTS_NS = resolveTranscriptsNamespace(STORE);
+
+const STORE_B = "facts";
+const CURATED_NS_B = resolveStoreNamespace(STORE_B);
+const TRANSCRIPTS_NS_B = resolveTranscriptsNamespace(STORE_B);
+
+async function seedTranscriptsFor(
+  backend: InMemoryMemoryStore,
+  transcriptsNs: MemoryNamespace,
+  ids: string[],
+): Promise<void> {
+  for (const id of ids) {
+    await backend.write(
+      transcriptsNs,
+      `transcripts/${id}.jsonl`,
+      encoder.encode(`transcript-${id}`),
+      `seed-${id}`,
+    );
+  }
+}
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -265,5 +285,103 @@ describe("runDueConsolidations", () => {
 
     expect(result).toEqual({ ran: 0 });
     expect(calls()).toBe(0);
+  });
+
+  it("dreams over every rw store, writing each curated MEMORY.md and leaving transcripts intact", async () => {
+    const backendA = new InMemoryMemoryStore();
+    const backendB = new InMemoryMemoryStore();
+    await seedTranscriptsFor(backendA, TRANSCRIPTS_NS, ["a1"]);
+    await seedTranscriptsFor(backendB, TRANSCRIPTS_NS_B, ["b1"]);
+    const timerStore = new InMemoryTimerStore();
+    await armConsolidation(timerStore, 100);
+    const { model, calls } = createModel("# Consolidated");
+    const config: MemoryConfig = {
+      root: ROOT,
+      stores: [
+        { name: STORE, backend: backendA, mountPath: `${ROOT}/${STORE}`, access: "rw" },
+        { name: STORE_B, backend: backendB, mountPath: `${ROOT}/${STORE_B}`, access: "rw" },
+      ],
+      dream: {},
+    };
+
+    const result = await runDueConsolidations({
+      timerStore,
+      now: 100,
+      loadConfig: async () => config,
+      resolveModel: async () => model,
+    });
+
+    expect(result).toEqual({ ran: 1 });
+    // One dream call per rw store.
+    expect(calls()).toBe(2);
+    expect(decode(await backendA.read(CURATED_NS, "MEMORY.md"))).toBe("# Consolidated");
+    expect(decode(await backendB.read(CURATED_NS_B, "MEMORY.md"))).toBe("# Consolidated");
+    // The transcripts (the dream's input) are never mutated.
+    expect(decode(await backendA.read(TRANSCRIPTS_NS, "transcripts/a1.jsonl"))).toBe(
+      "transcript-a1",
+    );
+    expect(decode(await backendB.read(TRANSCRIPTS_NS_B, "transcripts/b1.jsonl"))).toBe(
+      "transcript-b1",
+    );
+  });
+
+  it("counts the minSessions floor across every rw store, not per store", async () => {
+    const backendA = new InMemoryMemoryStore();
+    const backendB = new InMemoryMemoryStore();
+    // One session in each store: neither store alone meets a floor of 2, but
+    // the gate counts across both rw stores, so the dream runs.
+    await seedTranscriptsFor(backendA, TRANSCRIPTS_NS, ["a1"]);
+    await seedTranscriptsFor(backendB, TRANSCRIPTS_NS_B, ["b1"]);
+    const config: MemoryConfig = {
+      root: ROOT,
+      stores: [
+        { name: STORE, backend: backendA, mountPath: `${ROOT}/${STORE}`, access: "rw" },
+        { name: STORE_B, backend: backendB, mountPath: `${ROOT}/${STORE_B}`, access: "rw" },
+      ],
+      dream: { schedule: { minSessions: 2 } },
+    };
+
+    expect(await countSessionTranscripts(config)).toBe(2);
+    expect(await meetsMinSessions(config)).toBe(true);
+
+    const timerStore = new InMemoryTimerStore();
+    await armConsolidation(timerStore, 100);
+    const { model, calls } = createModel("# Consolidated");
+
+    const result = await runDueConsolidations({
+      timerStore,
+      now: 100,
+      loadConfig: async () => config,
+      resolveModel: async () => model,
+    });
+
+    expect(result).toEqual({ ran: 1 });
+    expect(calls()).toBe(2);
+  });
+
+  it("is a no-op for a ro-only agent (no rw stores to consolidate)", async () => {
+    const backend = new InMemoryMemoryStore();
+    await seedTranscripts(backend, ["s1"]);
+    const timerStore = new InMemoryTimerStore();
+    await armConsolidation(timerStore, 100);
+    const { model, calls } = createModel("should not write");
+    const config: MemoryConfig = {
+      root: ROOT,
+      stores: [mountStore(backend, "ro")],
+      dream: {},
+    };
+
+    const result = await runDueConsolidations({
+      timerStore,
+      now: 100,
+      loadConfig: async () => config,
+      resolveModel: async () => model,
+    });
+
+    // The timer is still consumed (ran reflects the swept consolidation), but
+    // no rw store means the dream writes nothing and the model is never called.
+    expect(result).toEqual({ ran: 1 });
+    expect(calls()).toBe(0);
+    expect(await backend.read(CURATED_NS, "MEMORY.md")).toBeNull();
   });
 });
