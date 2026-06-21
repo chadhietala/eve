@@ -180,6 +180,24 @@ export class FsMemoryStore implements MemoryStore {
   }
 }
 
+/**
+ * The public backend factory for a real-filesystem-backed memory store.
+ *
+ * Wraps {@link FsMemoryStore} so an agent can declare a store backend without
+ * touching the runtime class directly:
+ *
+ * ```ts
+ * defineMemory({ stores: { notes: { backend: fsStore("./.eve/notes") } } });
+ * ```
+ *
+ * The directory is the backend's identity — two stores pointing at the same
+ * `dir` share their curated and transcripts areas (the namespace keys on the
+ * store name, and the backend is what storage it lands in).
+ */
+export function fsStore(dir: string): MemoryStore {
+  return new FsMemoryStore(dir);
+}
+
 function parentOf(filePath: string): string {
   return join(filePath, "..");
 }

@@ -1,6 +1,7 @@
 import type { ContextContainer } from "#context/container.js";
 import { CONSOLIDATE_TASK_NAME, consolidationTimerKey } from "#runtime/memory/consolidate-task.js";
 import { MemoryConfigKey } from "#runtime/memory/keys.js";
+import { BundleKey } from "#runtime/sessions/runtime-context-keys.js";
 import { FsTimerStore } from "#runtime/timer/fs-store.js";
 import type { TimerStore } from "#runtime/timer/store.js";
 import { armTimer } from "#runtime/timer/timer.js";
@@ -46,7 +47,13 @@ export async function maybeArmConsolidation(
     return;
   }
 
-  const agentId = config.namespace.agentId;
+  // The consolidation timer is keyed per agent (one sliding deadline per agent).
+  // The store-keyed config no longer carries an agent id, so it comes from the
+  // bundle. Per-store timer keying is a later phase.
+  const agentId = ctx.get(BundleKey)?.resolvedAgent.config.name;
+  if (agentId === undefined) {
+    return;
+  }
   await armTimer(timerStore, {
     key: consolidationTimerKey(agentId),
     afterMs: idleMs,

@@ -146,7 +146,7 @@ function createResolvedMemory(memory: CompiledMemory | undefined): ResolvedMemor
     name: string;
     logicalPath: string;
     root: string;
-    hasStore: boolean;
+    stores: readonly ResolvedMemory["stores"][number][];
     sourceId: string;
     orientation?: string;
     dream?: ResolvedMemory["dream"];
@@ -154,7 +154,7 @@ function createResolvedMemory(memory: CompiledMemory | undefined): ResolvedMemor
     name: memory.name,
     logicalPath: memory.logicalPath,
     root: memory.root,
-    hasStore: memory.hasStore,
+    stores: memory.stores.map((store) => ({ ...store })),
     sourceId: memory.sourceId,
   };
 

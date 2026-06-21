@@ -20,20 +20,18 @@ export function formatTranscriptJsonl(messages: readonly ModelMessage[]): string
 }
 
 /**
- * Maps a session id to its raw transcript path within the memory namespace:
- * `sessions/<id>/transcript.jsonl`. The per-session directory leaves room for a
- * consolidation step to write derived artifacts (e.g. a summary) alongside the
- * raw transcript.
+ * Maps a session id to its raw transcript path within a store's TRANSCRIPTS
+ * namespace: `transcripts/<id>.jsonl`.
  *
  * The id is sanitized to a single safe path segment so a hostile or composite
- * id (one containing `/` or `..`) cannot escape the `sessions/` directory.
+ * id (one containing `/` or `..`) cannot escape the `transcripts/` directory.
  */
 export function transcriptPath(sessionId: string): string {
   const safe = sessionId
     .replace(/[^A-Za-z0-9._-]/g, "_")
     .replace(/\.{2,}/g, "_")
     .replace(/^\.+/, "_");
-  return `sessions/${safe}/transcript.jsonl`;
+  return `transcripts/${safe}.jsonl`;
 }
 
 /** Inputs for {@link dumpSession}. */

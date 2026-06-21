@@ -1,33 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { resolveMemoryNamespace, resolveSessionsNamespace } from "#runtime/memory/namespace.js";
+import { resolveStoreNamespace, resolveTranscriptsNamespace } from "#runtime/memory/namespace.js";
 
-describe("resolveMemoryNamespace", () => {
-  it("is agent-scoped: scopeId is the agent id under the working scope", () => {
-    const ns = resolveMemoryNamespace({ agentId: "agent-1" });
+describe("resolveStoreNamespace", () => {
+  it("keys the curated namespace on the store name, not an agent id", () => {
+    const ns = resolveStoreNamespace("notes");
     expect(ns).toEqual({
-      agentId: "agent-1",
-      scopeId: "agent-1",
-      scopeType: "working",
+      agentId: "notes",
+      scopeId: "notes",
+      scopeType: "store",
+    });
+  });
+
+  it("resolves the same partition for two agents pointing at the same store", () => {
+    expect(resolveStoreNamespace("shared")).toEqual(resolveStoreNamespace("shared"));
+  });
+});
+
+describe("resolveTranscriptsNamespace", () => {
+  it("keys the transcripts namespace on the store name under the transcripts scope", () => {
+    const ns = resolveTranscriptsNamespace("notes");
+    expect(ns).toEqual({
+      agentId: "notes",
+      scopeId: "notes",
+      scopeType: "transcripts",
     });
   });
 });
 
-describe("resolveSessionsNamespace", () => {
-  it("is agent-scoped under the off-mount sessions scope", () => {
-    const ns = resolveSessionsNamespace({ agentId: "agent-1" });
-    expect(ns).toEqual({
-      agentId: "agent-1",
-      scopeId: "agent-1",
-      scopeType: "sessions",
-    });
-  });
-});
-
-describe("memory vs sessions namespaces", () => {
-  it("differ in scopeType for the same agent so dumps never collide with mounted memory", () => {
-    const memory = resolveMemoryNamespace({ agentId: "agent-1" });
-    const sessions = resolveSessionsNamespace({ agentId: "agent-1" });
-    expect(memory.scopeType).not.toBe(sessions.scopeType);
-    expect(memory.agentId).toBe(sessions.agentId);
+describe("store vs transcripts namespaces", () => {
+  it("differ in scopeType for the same store so dumps never collide with curated memory", () => {
+    const curated = resolveStoreNamespace("notes");
+    const transcripts = resolveTranscriptsNamespace("notes");
+    expect(curated.scopeType).not.toBe(transcripts.scopeType);
+    expect(curated.scopeId).toBe(transcripts.scopeId);
   });
 });

@@ -8,8 +8,8 @@ import type { MemoryNamespace } from "#runtime/memory/types.js";
 
 const NS: MemoryNamespace = {
   agentId: "agent-a",
-  scopeId: "slack:C123:T456",
-  scopeType: "working",
+  scopeId: "notes",
+  scopeType: "store",
 };
 
 function bytes(text: string): Uint8Array {

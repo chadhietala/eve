@@ -2,19 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import { ContextContainer } from "#context/container.js";
 import { buildMemoryOrientationMessages } from "#context/memory-orientation.js";
-import { type MemoryConfig, MemoryConfigKey } from "#runtime/memory/keys.js";
+import { type MemoryConfig, type MountedStore, MemoryConfigKey } from "#runtime/memory/keys.js";
 import { InMemoryMemoryStore } from "#runtime/memory/store.js";
-import type { MemoryNamespace } from "#runtime/memory/types.js";
 
-const NAMESPACE: MemoryNamespace = { agentId: "a", scopeId: "a", scopeType: "working" };
-const SESSIONS: MemoryNamespace = { agentId: "a", scopeId: "a", scopeType: "sessions" };
+const ROOT = "/mnt/memory";
+
+function mountStore(name: string): MountedStore {
+  return { name, backend: new InMemoryMemoryStore(), mountPath: `${ROOT}/${name}`, access: "rw" };
+}
 
 function makeConfig(overrides: Partial<MemoryConfig> = {}): MemoryConfig {
   return {
-    namespace: NAMESPACE,
-    sessionsNamespace: SESSIONS,
-    root: "/memory",
-    store: new InMemoryMemoryStore(),
+    root: ROOT,
+    stores: [mountStore("notes")],
     ...overrides,
   };
 }
@@ -34,7 +34,7 @@ describe("buildMemoryOrientationMessages", () => {
   });
 
   it("always points the model at the mount root", () => {
-    expect(messagesFor(makeConfig())).toContain('mounted at "/memory"');
+    expect(messagesFor(makeConfig())).toContain('mounted at "/mnt/memory"');
   });
 
   it("injects the author orientation when present", () => {

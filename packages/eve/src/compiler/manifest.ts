@@ -39,7 +39,7 @@ export const ROOT_COMPILED_AGENT_NODE_ID = "__root__";
 /**
  * Current compiled manifest schema version.
  */
-export const COMPILED_AGENT_MANIFEST_VERSION = 33;
+export const COMPILED_AGENT_MANIFEST_VERSION = 34;
 
 /**
  * Compiled channel entry preserved in the compiled manifest.
@@ -123,14 +123,19 @@ export type CompiledInstructions = z.infer<typeof compiledInstructionsSchema>;
 /**
  * Normalized authored memory layer preserved in the compiled manifest.
  *
- * Serializable projection of a {@link MemoryDefinition}: the mount `root`,
- * the optional `orientation` text, and — for the `memory.{ts,...}` form — a
- * presence flag recording whether the author supplied a custom `store`. The
- * live store is not serialized; it is resolved from the module map at runtime
- * via {@link ModuleSourceRef.logicalPath}, mirroring how tools and connections
- * resolve their authored modules.
+ * Serializable projection of a {@link MemoryDefinition}: the mount `root`, the
+ * optional `orientation` text, and the static shape of each mounted store
+ * (name/path/access). The live store backends are not serialized; they resolve
+ * from the module map at runtime via {@link ModuleSourceRef.logicalPath},
+ * mirroring how tools and connections resolve their authored modules.
  */
 export type CompiledMemory = z.infer<typeof compiledMemorySchema>;
+
+/**
+ * Static, serializable projection of one mounted store (name/path/access). See
+ * {@link compiledStoreSchema} for the field-level documentation.
+ */
+export type CompiledStore = z.infer<typeof compiledStoreSchema>;
 
 /**
  * Static, serializable projection of a memory `dream` (consolidation) config.
@@ -391,6 +396,22 @@ const compiledDreamSchema = z
   })
   .strict();
 
+/**
+ * Static, serializable projection of one mounted store: its name, optional
+ * mount sub-path, and access level. The live backend is NOT serialized — it
+ * resolves from the module map at runtime via the memory source's logical path.
+ */
+const compiledStoreSchema = z
+  .object({
+    /** Store name — the key in `defineMemory({ stores })` and the namespace key. */
+    name: z.string(),
+    /** Mount sub-path under the root; absent means "default to the store name". */
+    path: z.string().optional(),
+    /** Access level. Absent means the runtime default `"rw"`. */
+    access: z.union([z.literal("ro"), z.literal("rw")]).optional(),
+  })
+  .strict();
+
 const compiledMemorySchema = z
   .object({
     name: z.string(),
@@ -402,8 +423,12 @@ const compiledMemorySchema = z
      * instructions), not a file under the mount.
      */
     orientation: z.string().optional(),
-    /** Whether the author supplied a custom backing store (`.ts` form only). */
-    hasStore: z.boolean(),
+    /**
+     * Static shape of each mounted store (name/path/access). Empty for the
+     * markdown form, which cannot declare live backends. The live backends
+     * resolve from the module map at runtime.
+     */
+    stores: z.array(compiledStoreSchema),
     /**
      * Static memory consolidation ("dream") config. Present when the author
      * declared a `dream`; the live `run` override resolves from the module map

@@ -2,26 +2,26 @@
  * Core types for the eve memory layer.
  *
  * Memory is presented as a POSIX-like filesystem but backed by an eve-owned
- * durable store. Storage is partitioned into namespaces — one per identity
- * dimension that already flows through a turn — so the four memory layers
- * (working, episodic, long-term, swarm) are namespaces over one store rather
- * than four separate storage systems. See RFC 0001.
+ * durable store. An agent declares named STORES, each a backend mounted at a
+ * path under `/mnt/memory`. Each store partitions into two namespaces over its
+ * backend — a CURATED area (mounted, what the agent reads/writes) and a
+ * TRANSCRIPTS area (off-mount, the raw record that powers consolidation) — so a
+ * store is two namespaces over one backend rather than two storage systems.
  */
 
 /**
  * A storage namespace: the partition a memory read/write resolves against.
  *
- * `scopeType` selects the layer; `scopeId` is the layer-specific partition
- * key (the agent id for working memory — the agent-scoped, persistent area
- * mounted at `/memory`; the principal key for episodic, the agent node id for
- * long-term, an org/deployment id for swarm). `"sessions"` is an internal
- * partition holding the raw, immutable per-session transcript dumps off the
- * mount — the source material a consolidation reads, never served through
- * `/memory`. `agentId` scopes every namespace to the resolved agent so two
- * agents never share a partition.
+ * `scopeType` selects the area: `"store"` is the curated, mounted area an agent
+ * reads and writes; `"transcripts"` is the off-mount, immutable area holding the
+ * raw per-session transcript dumps — the source material a consolidation reads,
+ * never served through the mount. Both are keyed by the **store name**:
+ * `scopeId` and `agentId` both carry it, so two agents pointing at the same
+ * named backend resolve the same partition (sharing keys on the store, not the
+ * agent id).
  */
 export interface MemoryNamespace {
-  readonly scopeType: "working" | "episodic" | "long-term" | "swarm" | "sessions";
+  readonly scopeType: "store" | "transcripts";
   readonly scopeId: string;
   readonly agentId: string;
 }

@@ -4,29 +4,22 @@ import { describe, expect, it } from "vitest";
 import { ContextContainer, contextStorage } from "#context/container.js";
 import { maybeDumpSession } from "#context/session-dump-step.js";
 import type { HarnessSession } from "#harness/types.js";
-import { type MemoryConfig, MemoryConfigKey } from "#runtime/memory/keys.js";
+import { type MemoryConfig, type MountedStore, MemoryConfigKey } from "#runtime/memory/keys.js";
 import { InMemoryMemoryStore } from "#runtime/memory/store.js";
-import type { MemoryNamespace } from "#runtime/memory/types.js";
+import { resolveStoreNamespace, resolveTranscriptsNamespace } from "#runtime/memory/namespace.js";
 
-const MOUNTED_NAMESPACE: MemoryNamespace = {
-  agentId: "agent-1",
-  scopeId: "agent-1",
-  scopeType: "working",
-};
+const ROOT = "/mnt/memory";
 
-const SESSIONS_NAMESPACE: MemoryNamespace = {
-  agentId: "agent-1",
-  scopeId: "agent-1",
-  scopeType: "sessions",
-};
+function mountStore(
+  name: string,
+  access: "ro" | "rw",
+  backend = new InMemoryMemoryStore(),
+): MountedStore {
+  return { name, backend, mountPath: `${ROOT}/${name}`, access };
+}
 
-function makeConfig(store: InMemoryMemoryStore): MemoryConfig {
-  return {
-    namespace: MOUNTED_NAMESPACE,
-    sessionsNamespace: SESSIONS_NAMESPACE,
-    root: "/memory",
-    store,
-  };
+function makeConfig(stores: readonly MountedStore[]): MemoryConfig {
+  return { root: ROOT, stores };
 }
 
 function makeSession(history: ModelMessage[]): HarnessSession {
@@ -55,20 +48,35 @@ function decode(value: Uint8Array | null): string | null {
 }
 
 describe("maybeDumpSession", () => {
-  it("writes the transcript to the off-mount sessions namespace, not the mounted one", async () => {
-    const store = new InMemoryMemoryStore();
+  it("dumps the transcript to transcripts/<id>.jsonl in each rw store's transcripts namespace", async () => {
+    const notes = mountStore("notes", "rw");
+    const facts = mountStore("facts", "rw");
     const session = makeSession([{ role: "user", content: "hi" }]);
 
-    await withMemory(makeConfig(store), (ctx) => maybeDumpSession(ctx, session));
+    await withMemory(makeConfig([notes, facts]), (ctx) => maybeDumpSession(ctx, session));
 
-    const stored = decode(
-      await store.read(SESSIONS_NAMESPACE, "sessions/session-42/transcript.jsonl"),
-    );
-    expect(stored).not.toBeNull();
-    expect(JSON.parse(stored!)).toEqual({ role: "user", content: "hi" });
+    for (const store of [notes, facts]) {
+      const ns = resolveTranscriptsNamespace(store.name);
+      const stored = decode(await store.backend.read(ns, "transcripts/session-42.jsonl"));
+      expect(stored).not.toBeNull();
+      expect(JSON.parse(stored!)).toEqual({ role: "user", content: "hi" });
 
-    // The mounted memory area (what /memory serves) must stay untouched.
-    expect(await store.list(MOUNTED_NAMESPACE, "")).toEqual([]);
+      // Never in the curated (mounted) namespace.
+      expect(await store.backend.list(resolveStoreNamespace(store.name), "")).toEqual([]);
+    }
+  });
+
+  it("does not dump into a read-only store", async () => {
+    const rw = mountStore("notes", "rw");
+    const ro = mountStore("facts", "ro");
+    const session = makeSession([{ role: "user", content: "hi" }]);
+
+    await withMemory(makeConfig([rw, ro]), (ctx) => maybeDumpSession(ctx, session));
+
+    expect(await ro.backend.list(resolveTranscriptsNamespace("facts"), "")).toEqual([]);
+    expect(
+      await rw.backend.read(resolveTranscriptsNamespace("notes"), "transcripts/session-42.jsonl"),
+    ).not.toBeNull();
   });
 
   it("is a no-op when no MemoryConfig is present", async () => {
@@ -77,6 +85,6 @@ describe("maybeDumpSession", () => {
 
     await withMemory(undefined, (ctx) => maybeDumpSession(ctx, session));
 
-    expect(await store.list(SESSIONS_NAMESPACE, "")).toEqual([]);
+    expect(await store.list(resolveTranscriptsNamespace("notes"), "")).toEqual([]);
   });
 });

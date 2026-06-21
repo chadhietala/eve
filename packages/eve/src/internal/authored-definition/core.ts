@@ -209,25 +209,23 @@ export function normalizeInstructionsDefinition(
  * Normalizes one authored memory definition's markdown-derived shape into
  * the canonical internal form.
  *
- * Used for the `memory.md` path, where the only fields a markdown file can
- * supply are the orientation text (its markdown body) and an optional `root`
- * override. Memory identity is path-derived (`memory.md` / `memory.{ts,...}`),
- * so no `name` field is accepted. The `.ts` path carries `store` and is
- * validated by its brand instead of this normalizer.
+ * Used for the `memory.md` path, where the only field a markdown file can supply
+ * is the orientation text (its markdown body). Markdown cannot declare live
+ * store backends, so the lowered definition carries NO `stores` — a store-backed
+ * memory layer requires `memory.ts`. Memory identity is path-derived, so no
+ * `name` field is accepted. The `.ts` path carries `stores` and is validated by
+ * its brand instead of this normalizer.
  */
 export function normalizeMemoryDefinition(
   value: unknown,
   message: string,
 ): MemoryDefinition & { readonly orientation: string } {
   const record = expectObjectRecord(value, message);
-  expectOnlyKnownKeys(record, ["root", "orientation", "dream"], message);
-  const definition: { root?: string; orientation: string; dream?: DreamConfig } = {
+  expectOnlyKnownKeys(record, ["stores", "orientation", "dream"], message);
+  const definition: { stores: Record<string, never>; orientation: string; dream?: DreamConfig } = {
+    stores: {},
     orientation: expectString(record.orientation, message),
   };
-
-  if (record.root !== undefined) {
-    definition.root = expectString(record.root, message);
-  }
 
   if (record.dream !== undefined) {
     definition.dream = normalizeMemoryDreamDefinition(record.dream, message);

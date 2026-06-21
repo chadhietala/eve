@@ -13,9 +13,9 @@ import {
 import type { MemoryNamespace } from "#runtime/memory/types.js";
 
 const NS: MemoryNamespace = {
-  agentId: "agent-a",
-  scopeId: "slack:C123:T456",
-  scopeType: "working",
+  agentId: "notes",
+  scopeId: "notes",
+  scopeType: "transcripts",
 };
 
 const MESSAGES: ModelMessage[] = [

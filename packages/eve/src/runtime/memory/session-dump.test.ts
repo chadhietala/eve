@@ -12,7 +12,7 @@ import type { MemoryNamespace } from "#runtime/memory/types.js";
 const NS: MemoryNamespace = {
   agentId: "agent-1",
   scopeId: "scope-1",
-  scopeType: "working",
+  scopeType: "transcripts",
 };
 
 function decode(value: Uint8Array | null): string | null {
@@ -72,14 +72,14 @@ describe("formatTranscriptJsonl", () => {
 });
 
 describe("transcriptPath", () => {
-  it("places the transcript under sessions/<id>/transcript.jsonl", () => {
-    expect(transcriptPath("abc")).toBe("sessions/abc/transcript.jsonl");
+  it("places the transcript under transcripts/<id>.jsonl", () => {
+    expect(transcriptPath("abc")).toBe("transcripts/abc.jsonl");
   });
 
-  it("sanitizes a traversal id so it cannot escape sessions/", () => {
+  it("sanitizes a traversal id so it cannot escape transcripts/", () => {
     const path = transcriptPath("../../etc/passwd");
-    expect(path.startsWith("sessions/")).toBe(true);
-    expect(path.endsWith("/transcript.jsonl")).toBe(true);
+    expect(path.startsWith("transcripts/")).toBe(true);
+    expect(path.endsWith(".jsonl")).toBe(true);
     expect(path).not.toContain("/etc/");
     expect(path).not.toContain("..");
   });
@@ -92,7 +92,7 @@ describe("dumpSession", () => {
     const store = new InMemoryMemoryStore();
     await dumpSession(store, NS, { sessionId: "s1", messages, writeKey: "k1" });
 
-    const stored = decode(await store.read(NS, "sessions/s1/transcript.jsonl"));
+    const stored = decode(await store.read(NS, "transcripts/s1.jsonl"));
     expect(stored).toBe(formatTranscriptJsonl(messages));
   });
 
@@ -106,7 +106,7 @@ describe("dumpSession", () => {
       writeKey: "k1",
     });
 
-    expect(decode(await store.read(NS, "sessions/s1/transcript.jsonl"))).toBe(
+    expect(decode(await store.read(NS, "transcripts/s1.jsonl"))).toBe(
       formatTranscriptJsonl(messages),
     );
   });

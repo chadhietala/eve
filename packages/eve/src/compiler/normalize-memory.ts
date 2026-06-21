@@ -1,6 +1,6 @@
 import { stripLogicalPathExtension } from "#discover/filesystem.js";
 import type { MemorySourceRef } from "#discover/manifest.js";
-import type { CompiledDream, CompiledMemory } from "#compiler/manifest.js";
+import type { CompiledDream, CompiledMemory, CompiledStore } from "#compiler/manifest.js";
 import {
   loadModuleBackedDefinition,
   type ModuleBackedDefinitionLoadOptions,
@@ -9,21 +9,26 @@ import {
   isBrandedMemoryDefinition,
   type DreamConfig,
   type MemoryDefinition,
+  type StoreMount,
 } from "#public/definitions/memory.js";
 
-/** Default mount point for the memory filesystem view. */
-const DEFAULT_MEMORY_ROOT = "/memory";
+/** Default mount root for the memory filesystem view. */
+const DEFAULT_MEMORY_ROOT = "/mnt/memory";
+
+/** Maximum number of stores an agent may declare. */
+const MAX_STORES = 8;
 
 /**
  * Compiles one authored memory source (markdown `memory.md` or module-backed
  * `defineMemory`) into the serializable {@link CompiledMemory} projection
  * loaded by the runtime.
  *
- * The markdown form contributes only an `orientation` (its body) under the
- * default `/memory` root. The module form is brand-checked (it must come
- * through `defineMemory`) and contributes its `root`, `orientation`, and a
- * presence flag for the custom `store`; the live store is not serialized — it
- * resolves from the module map at runtime via the source's logical path.
+ * The markdown form contributes only an `orientation` (its body) with NO stores
+ * — markdown cannot declare live backends. The module form is brand-checked (it
+ * must come through `defineMemory`) and contributes its `orientation`, `dream`,
+ * and the static shape (name/path/access) of each store; the live backends are
+ * not serialized — they resolve from the module map at runtime via the source's
+ * logical path. Declaring more than {@link MAX_STORES} stores is a compile error.
  */
 export async function compileMemoryEntry(
   agentRoot: string,
@@ -54,11 +59,13 @@ function projectCompiledMemory(
   definition: MemoryDefinition,
   source: MemorySourceRef,
 ): CompiledMemory {
+  const stores = projectCompiledStores(definition, source);
+
   const compiled: CompiledMemory = {
     name: stripLogicalPathExtension(source.logicalPath),
     logicalPath: source.logicalPath,
-    root: definition.root ?? DEFAULT_MEMORY_ROOT,
-    hasStore: definition.store !== undefined,
+    root: DEFAULT_MEMORY_ROOT,
+    stores,
     sourceId: source.sourceId,
     sourceKind: source.sourceKind,
   };
@@ -73,6 +80,39 @@ function projectCompiledMemory(
   }
 
   return withDream;
+}
+
+/**
+ * Projects the authored `stores` map into the static, serializable
+ * {@link CompiledStore} list. The markdown form has no `stores` (it cannot
+ * declare live backends), so it compiles to an empty list. Enforces the
+ * {@link MAX_STORES} cap with a clear diagnostic, and preserves only the durable
+ * fields (name/path/access) — the live backend resolves from the module map.
+ */
+function projectCompiledStores(
+  definition: MemoryDefinition,
+  source: MemorySourceRef,
+): CompiledStore[] {
+  const entries = Object.entries(definition.stores ?? {});
+
+  if (entries.length > MAX_STORES) {
+    throw new Error(
+      `Memory definition in "${source.logicalPath}" declares ${entries.length} stores; at most ${MAX_STORES} are allowed.`,
+    );
+  }
+
+  return entries.map(([name, mount]) => projectCompiledStore(name, mount));
+}
+
+function projectCompiledStore(name: string, mount: StoreMount): CompiledStore {
+  const compiled: Mutable<CompiledStore> = { name };
+  if (mount.path !== undefined) {
+    compiled.path = mount.path;
+  }
+  if (mount.access !== undefined) {
+    compiled.access = mount.access;
+  }
+  return compiled;
 }
 
 /**

@@ -5,7 +5,7 @@ import type { MemoryNamespace } from "#runtime/memory/types.js";
 const namespace: MemoryNamespace = {
   agentId: "agent-1",
   scopeId: "slack:c1:t1",
-  scopeType: "working",
+  scopeType: "store",
 };
 
 describe("buildWriteKey", () => {

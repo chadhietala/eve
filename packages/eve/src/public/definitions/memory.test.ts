@@ -5,55 +5,57 @@ import {
   defineMemory,
   isBrandedMemoryDefinition,
 } from "#public/definitions/memory.js";
+import { InMemoryMemoryStore } from "#runtime/memory/store.js";
 
 describe("defineMemory", () => {
-  it("preserves the authored config and infers literal types", () => {
+  it("preserves the authored stores and orientation", () => {
+    const backend = new InMemoryMemoryStore();
     const memory = defineMemory({
-      root: "/memory",
+      stores: { notes: { backend, access: "ro", path: "n" } },
       orientation: "# Orientation",
     });
 
-    expect(memory.root).toBe("/memory");
     expect(memory.orientation).toBe("# Orientation");
+    expect(memory.stores.notes.backend).toBe(backend);
+    expect(memory.stores.notes.access).toBe("ro");
+    expect(memory.stores.notes.path).toBe("n");
   });
 
   it("brands the returned definition", () => {
-    const memory = defineMemory({ root: "/memory" });
+    const memory = defineMemory({ stores: { notes: { backend: new InMemoryMemoryStore() } } });
 
-    expect((memory as Record<symbol, unknown>)[MEMORY_BRAND]).toBe(true);
+    expect((memory as object as Record<symbol, unknown>)[MEMORY_BRAND]).toBe(true);
     expect(isBrandedMemoryDefinition(memory)).toBe(true);
   });
 
   it("does not treat plain objects as branded", () => {
-    expect(isBrandedMemoryDefinition({ root: "/memory" })).toBe(false);
+    expect(isBrandedMemoryDefinition({ stores: {} })).toBe(false);
     expect(isBrandedMemoryDefinition(null)).toBe(false);
   });
 
   it("retains the same object identity it was given", () => {
-    const config = { orientation: "remember me" };
+    const config = { stores: {}, orientation: "remember me" };
     const memory = defineMemory(config);
 
     expect(memory).toBe(config);
   });
 });
 
-// Type-only fixtures: these never run, but the compiler checks them. Using
-// `import type` for the sibling store keeps this test runnable before the
-// `#runtime/memory/store` module exists.
+// Type-only fixtures: these never run, but the compiler checks them.
 function typeOnlyFixtures(): void {
   const memoryWithName = {
-    root: "/memory",
+    stores: {},
     name: "scratchpad",
   };
   // @ts-expect-error Memory identity is path-derived.
   defineMemory(memoryWithName);
 
-  const memoryWithHandler = {
-    root: "/scratch",
-    onRead: () => null,
+  const memoryWithRoot = {
+    stores: {},
+    root: "/memory",
   };
-  // @ts-expect-error Per-op IO handlers were removed — memory is a filesystem.
-  defineMemory(memoryWithHandler);
+  // @ts-expect-error The mount root is fixed at /mnt/memory; not author-configurable.
+  defineMemory(memoryWithRoot);
 }
 
 void typeOnlyFixtures;

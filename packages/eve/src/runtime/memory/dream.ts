@@ -2,12 +2,15 @@ import { generateText, type LanguageModel } from "ai";
 
 import type { DreamContext, DreamMemoryAccess } from "#public/definitions/memory.js";
 import type { MemoryConfig } from "#runtime/memory/keys.js";
+import { resolveStoreNamespace, resolveTranscriptsNamespace } from "#runtime/memory/namespace.js";
 import type { MemoryStore } from "#runtime/memory/store.js";
 import type { MemoryNamespace } from "#runtime/memory/types.js";
 import { buildWriteKey } from "#runtime/memory/write-key.js";
 
-/** Filename the off-mount session transcripts land at within each session dir. */
-const TRANSCRIPT_FILENAME = "transcript.jsonl";
+/** Directory the off-mount session transcripts land under within a store. */
+const TRANSCRIPTS_PREFIX = "transcripts/";
+/** Filename suffix every per-session transcript dump lands at. */
+const TRANSCRIPT_SUFFIX = ".jsonl";
 
 /** The curated memory file the default synthesis reads from and writes back to. */
 const DEFAULT_MEMORY_FILE = "MEMORY.md";
@@ -33,12 +36,12 @@ const DEFAULT_DREAM_SYSTEM_PROMPT = [
 
 /** Inputs for {@link buildDreamContext}. */
 export interface BuildDreamContextInput {
-  /** The backing store both namespaces resolve against. */
-  readonly store: MemoryStore;
-  /** The mounted `/memory` namespace — the dream's output, the only area written. */
-  readonly memoryNamespace: MemoryNamespace;
-  /** The off-mount raw-sessions namespace — the dream's immutable input. */
-  readonly sessionsNamespace: MemoryNamespace;
+  /** The store's backend both namespaces resolve against. */
+  readonly backend: MemoryStore;
+  /** The store's curated namespace — the dream's output, the only area written. */
+  readonly curatedNamespace: MemoryNamespace;
+  /** The store's off-mount transcripts namespace — the dream's immutable input. */
+  readonly transcriptsNamespace: MemoryNamespace;
   /** The resolved model the synthesis calls. */
   readonly model: LanguageModel;
   /** Optional free-text guidance steering what the synthesis keeps/merges/drops. */
@@ -46,19 +49,19 @@ export interface BuildDreamContextInput {
 }
 
 /**
- * Builds the {@link DreamContext} a consolidation runs against.
+ * Builds the {@link DreamContext} a consolidation runs against for one store.
  *
- * `sessions` is materialized by listing the sessions namespace under
- * `sessions/`, reading each `transcript.jsonl`, and deriving the session id
- * from its path. Those reads never mutate the sessions area. `memory` is a
- * read/write/list facade bound to the mounted namespace only, so a dream — the
+ * `sessions` is materialized by listing the transcripts namespace under
+ * `transcripts/`, reading each `<id>.jsonl`, and deriving the session id from its
+ * path. Those reads never mutate the transcripts area. `memory` is a
+ * read/write/list facade bound to the curated namespace only, so a dream — the
  * default or an override — physically cannot write back to its own source
- * material. Writes are content-addressed via {@link buildWriteKey} so a
- * replayed consolidation is idempotent.
+ * material. Writes are content-addressed via {@link buildWriteKey} so a replayed
+ * consolidation is idempotent.
  */
 export async function buildDreamContext(input: BuildDreamContextInput): Promise<DreamContext> {
-  const sessions = await readSessions(input.store, input.sessionsNamespace);
-  const memory = createMemoryAccess(input.store, input.memoryNamespace);
+  const sessions = await readSessions(input.backend, input.transcriptsNamespace);
+  const memory = createMemoryAccess(input.backend, input.curatedNamespace);
 
   const context: {
     instructions?: string;
@@ -86,7 +89,7 @@ export async function buildDreamContext(input: BuildDreamContextInput): Promise<
  * transcript, asks the model to fold the sessions into the prior memory under
  * {@link DEFAULT_DREAM_SYSTEM_PROMPT} (plus the author's `instructions`), and
  * writes the result back to {@link DEFAULT_MEMORY_FILE}. It only ever writes to
- * `ctx.memory`; the sessions area is read-only by construction.
+ * `ctx.memory`; the transcripts area is read-only by construction.
  */
 export async function defaultDream(ctx: DreamContext): Promise<void> {
   // Nothing to consolidate: leave the curated memory untouched rather than
@@ -120,12 +123,15 @@ export async function defaultDream(ctx: DreamContext): Promise<void> {
 }
 
 /**
- * Runs the memory consolidation for a turn's {@link MemoryConfig}.
+ * Runs the memory consolidation for a turn's {@link MemoryConfig}, once per
+ * `rw` store.
  *
- * Builds the {@link DreamContext} from the config (store, mounted namespace,
- * sessions namespace, model, and dream instructions) and dispatches to the
- * author's `config.dream.run` override when present, otherwise the
- * {@link defaultDream}. A no-op when the agent declares no `dream`.
+ * For each writable store: builds the {@link DreamContext} from the store's
+ * backend, its curated namespace, its transcripts namespace, and the model, then
+ * dispatches to the author's `config.dream.run` override when present, otherwise
+ * the {@link defaultDream}. `ro` stores are skipped (their transcripts are never
+ * dumped, so there is nothing to consolidate). A no-op when the agent declares no
+ * `dream`.
  */
 export async function runDream(
   config: MemoryConfig,
@@ -135,37 +141,41 @@ export async function runDream(
     return;
   }
 
-  const buildInput: Mutable<BuildDreamContextInput> = {
-    store: config.store,
-    memoryNamespace: config.namespace,
-    sessionsNamespace: config.sessionsNamespace,
-    model: input.model,
-  };
-  if (config.dream.instructions !== undefined) {
-    buildInput.instructions = config.dream.instructions;
-  }
-
-  const ctx = await buildDreamContext(buildInput);
   const run = config.dream.run ?? defaultDream;
-  await run(ctx);
+
+  for (const store of config.stores) {
+    if (store.access !== "rw") {
+      continue;
+    }
+
+    const buildInput: Mutable<BuildDreamContextInput> = {
+      backend: store.backend,
+      curatedNamespace: resolveStoreNamespace(store.name),
+      transcriptsNamespace: resolveTranscriptsNamespace(store.name),
+      model: input.model,
+    };
+    if (config.dream.instructions !== undefined) {
+      buildInput.instructions = config.dream.instructions;
+    }
+
+    const ctx = await buildDreamContext(buildInput);
+    await run(ctx);
+  }
 }
 
 async function readSessions(
-  store: MemoryStore,
-  sessionsNamespace: MemoryNamespace,
+  backend: MemoryStore,
+  transcriptsNamespace: MemoryNamespace,
 ): Promise<DreamContext["sessions"]> {
-  const entries = await store.list(sessionsNamespace, "sessions/");
+  const entries = await backend.list(transcriptsNamespace, TRANSCRIPTS_PREFIX);
   const sessions: { sessionId: string; transcript: string }[] = [];
 
   for (const entry of entries) {
-    if (!entry.path.endsWith(`/${TRANSCRIPT_FILENAME}`)) {
-      continue;
-    }
     const sessionId = deriveSessionId(entry.path);
     if (sessionId === null) {
       continue;
     }
-    const bytes = await store.read(sessionsNamespace, entry.path);
+    const bytes = await backend.read(transcriptsNamespace, entry.path);
     if (bytes === null) {
       continue;
     }
@@ -176,31 +186,34 @@ async function readSessions(
 }
 
 /**
- * Recovers the session id from a `sessions/<id>/transcript.jsonl` path. Returns
- * `null` for any path that does not match that exact shape so unrelated
- * entries are skipped rather than mis-keyed.
+ * Recovers the session id from a `transcripts/<id>.jsonl` path. Returns `null`
+ * for any path that does not match that exact shape so unrelated entries are
+ * skipped rather than mis-keyed.
  */
 function deriveSessionId(path: string): string | null {
-  const segments = path.split("/");
-  if (segments.length !== 3 || segments[0] !== "sessions" || segments[2] !== TRANSCRIPT_FILENAME) {
+  if (!path.startsWith(TRANSCRIPTS_PREFIX) || !path.endsWith(TRANSCRIPT_SUFFIX)) {
     return null;
   }
-  return segments[1] ?? null;
+  const id = path.slice(TRANSCRIPTS_PREFIX.length, path.length - TRANSCRIPT_SUFFIX.length);
+  if (id.length === 0 || id.includes("/")) {
+    return null;
+  }
+  return id;
 }
 
 /**
- * Builds the {@link DreamMemoryAccess} facade over the mounted memory namespace.
- * Reads/writes/lists resolve against `memoryNamespace` only — there is no path
- * by which this facade reaches the sessions area, which is the guarantee that
+ * Builds the {@link DreamMemoryAccess} facade over a store's curated namespace.
+ * Reads/writes/lists resolve against `curatedNamespace` only — there is no path
+ * by which this facade reaches the transcripts area, which is the guarantee that
  * the dream never mutates its input.
  */
 function createMemoryAccess(
-  store: MemoryStore,
-  memoryNamespace: MemoryNamespace,
+  backend: MemoryStore,
+  curatedNamespace: MemoryNamespace,
 ): DreamMemoryAccess {
   return {
     async read(path: string): Promise<string | null> {
-      const bytes = await store.read(memoryNamespace, path);
+      const bytes = await backend.read(curatedNamespace, path);
       return bytes === null ? null : decoder.decode(bytes);
     },
     async write(path: string, content: string): Promise<void> {
@@ -210,15 +223,15 @@ function createMemoryAccess(
       // write key so a replayed consolidation that produces the same memory is a
       // no-op in the store.
       const writeKey = buildWriteKey({
-        namespace: memoryNamespace,
+        namespace: curatedNamespace,
         turnId: `dream:${path}`,
         seq: 0,
         content: bytes,
       });
-      await store.write(memoryNamespace, path, bytes, writeKey);
+      await backend.write(curatedNamespace, path, bytes, writeKey);
     },
     async list(prefix: string): Promise<readonly string[]> {
-      const entries = await store.list(memoryNamespace, prefix);
+      const entries = await backend.list(curatedNamespace, prefix);
       return entries.map((entry) => entry.path);
     },
   };

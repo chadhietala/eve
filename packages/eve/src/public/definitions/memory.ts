@@ -118,50 +118,70 @@ export interface DreamConfig {
 }
 
 /**
+ * One named store mount in a {@link MemoryDefinition}.
+ *
+ * A store is a {@link MemoryStore} backend mounted at a path under
+ * `/mnt/memory` with an access level. The `backend` is both the storage and
+ * the sharing key: two agents that mount the same backend share the store's
+ * curated memory and its transcripts (the namespace keys on the store name, not
+ * the agent id).
+ */
+export interface StoreMount {
+  /** The backing store — its storage, and the key two agents share by reusing. */
+  readonly backend: MemoryStore;
+  /**
+   * Mount sub-path under `/mnt/memory`. Defaults to the store's name (the key
+   * in {@link MemoryDefinition.stores}). e.g. a `notes` store with no `path`
+   * mounts at `/mnt/memory/notes`.
+   */
+  readonly path?: string;
+  /**
+   * Access level for the agent. `"rw"` (default) lets the agent read and write
+   * the curated area and dumps its transcripts into the store; `"ro"` lets it
+   * read only — a write through the mount is rejected with an error the model
+   * sees, and no transcripts are dumped into it.
+   */
+  readonly access?: "ro" | "rw";
+}
+
+/**
  * Public definition for an agent's memory layer authored in markdown or
  * TypeScript.
  *
  * Authored at the agent root as either `memory.md` or
  * `memory.{ts,cts,mts,js,cjs,mjs}`, or inside the `agent/memory/`
  * directory for multi-file setups. The `.md` variant supplies only the
- * {@link MemoryDefinition.orientation} (its markdown body); the `.ts`
- * variant may additionally swap the backing {@link MemoryStore}.
+ * {@link MemoryDefinition.orientation} (its markdown body) and declares NO
+ * stores — live backends cannot be expressed in markdown, so a store-backed
+ * memory layer requires the `memory.ts` form. With no `defineMemory` (no
+ * memory source at all) the agent has no memory.
  *
- * Memory is a filesystem: the framework always routes `/memory` file-tool
- * operations to the {@link MemoryStore}, namespaced from the request's
- * identity and channel continuation token. There is no per-operation
- * override — a custom backend is supplied by swapping the `store`, and
- * non-filesystem access patterns (search/RAG/knowledge-graph) are built with
- * eve's normal tool system, not the memory layer.
+ * Memory is a filesystem: the framework routes file-tool operations under
+ * `/mnt/memory/<store-path>` to that store's backend, namespaced by the store
+ * name. Non-filesystem access patterns (search/RAG/knowledge-graph) are built
+ * with eve's normal tool system, not the memory layer.
  */
 export interface MemoryDefinition {
   /**
-   * Mount point for the memory filesystem view, as an absolute POSIX path.
-   * Defaults to `"/memory"`. All read/write/list/grep paths are resolved
-   * relative to this root.
+   * The named stores this agent mounts, keyed by store name. Each value mounts
+   * a {@link MemoryStore} backend at a path under `/mnt/memory` with an access
+   * level. At most 8 stores — declaring more is a compile error. Markdown
+   * memory (`memory.md`) cannot declare stores; use `memory.ts`.
    */
-  readonly root?: string;
-
-  /**
-   * The backing store for this memory layer. When omitted the framework
-   * supplies its default eve-owned versioned store (filesystem in dev,
-   * blob/KV in prod). Provide one to swap the backend behind the same
-   * interface.
-   */
-  readonly store?: MemoryStore;
+  readonly stores: Record<string, StoreMount>;
 
   /**
    * Orientation text injected as a system pointer (like instructions) —
    * the `memory.md` body or the `memory.ts` return. It is NOT a file
-   * mounted under the memory `root`; it is read-only context that tells
-   * the agent how to use its memory layer.
+   * mounted under any store; it is read-only context that tells the agent how
+   * to use its memory layer.
    */
   readonly orientation?: string;
 
   /**
-   * Memory consolidation ("dream") configuration. When present, the agent's
-   * raw session transcripts are periodically folded into this curated memory
-   * area by the built-in default synthesis or a {@link DreamConfig.run}
+   * Memory consolidation ("dream") configuration. When present, each `rw`
+   * store's raw session transcripts are periodically folded into that store's
+   * curated area by the built-in default synthesis or a {@link DreamConfig.run}
    * override. Absent means no consolidation runs.
    */
   readonly dream?: DreamConfig;
@@ -171,10 +191,10 @@ export interface MemoryDefinition {
  * Defines an agent's memory layer in TypeScript from a
  * {@link MemoryDefinition}.
  *
- * Use it to override the memory root, swap the backing {@link MemoryStore},
- * or provide orientation text. For fixed orientation text with no overrides,
- * author `memory.md` instead. The result is branded so the compiler and
- * runtime can validate that a memory definition came through this helper.
+ * Use it to declare the named stores, provide orientation text, and configure
+ * consolidation. For fixed orientation text with no stores, author `memory.md`
+ * instead. The result is branded so the compiler and runtime can validate that
+ * a memory definition came through this helper.
  */
 export function defineMemory<TMemory extends MemoryDefinition>(
   definition: ExactDefinition<TMemory, MemoryDefinition>,

@@ -2,8 +2,7 @@ import type { LanguageModel } from "ai";
 
 import { runDream } from "#runtime/memory/dream.js";
 import type { MemoryConfig } from "#runtime/memory/keys.js";
-import type { MemoryStore } from "#runtime/memory/store.js";
-import type { MemoryNamespace } from "#runtime/memory/types.js";
+import { resolveTranscriptsNamespace } from "#runtime/memory/namespace.js";
 import { sweepDueTimers } from "#runtime/timer/timer.js";
 import type { TimerStore } from "#runtime/timer/store.js";
 import type { TimerRecord } from "#runtime/timer/types.js";
@@ -38,26 +37,32 @@ export interface ConsolidateTaskPayload {
   readonly agentId: string;
 }
 
+/** Directory the off-mount session transcripts land under within a store. */
+const TRANSCRIPTS_PREFIX = "transcripts/";
 /** Filename suffix every per-session transcript dump lands at. */
-const TRANSCRIPT_FILENAME = "transcript.jsonl";
+const TRANSCRIPT_SUFFIX = ".jsonl";
 
 /**
- * Counts the raw session transcripts available to consolidate for a config.
+ * Counts the raw session transcripts available to consolidate across every `rw`
+ * store in a config.
  *
- * Lists the off-mount sessions namespace under `sessions/` and counts entries
- * ending in `transcript.jsonl` — the same shape {@link runDream} reads. Pure
- * over the injected store, so the `minSessions` gate is testable without a
- * model or timer.
+ * Lists each writable store's off-mount transcripts namespace under
+ * `transcripts/` and counts entries ending in `.jsonl` — the same shape
+ * {@link runDream} reads. Pure over the injected backends, so the `minSessions`
+ * gate is testable without a model or timer.
  */
-export async function countSessionTranscripts(
-  store: MemoryStore,
-  sessionsNamespace: MemoryNamespace,
-): Promise<number> {
-  const entries = await store.list(sessionsNamespace, "sessions/");
+export async function countSessionTranscripts(config: MemoryConfig): Promise<number> {
   let count = 0;
-  for (const entry of entries) {
-    if (entry.path.endsWith(`/${TRANSCRIPT_FILENAME}`)) {
-      count += 1;
+  for (const store of config.stores) {
+    if (store.access !== "rw") {
+      continue;
+    }
+    const ns = resolveTranscriptsNamespace(store.name);
+    const entries = await store.backend.list(ns, TRANSCRIPTS_PREFIX);
+    for (const entry of entries) {
+      if (entry.path.startsWith(TRANSCRIPTS_PREFIX) && entry.path.endsWith(TRANSCRIPT_SUFFIX)) {
+        count += 1;
+      }
     }
   }
   return count;
@@ -68,15 +73,16 @@ export async function countSessionTranscripts(
  *
  * `minSessions` is the author's floor below which a dream is not worth running
  * (the curated memory wouldn't change meaningfully). Absent or zero means "no
- * floor" — any session count passes. A separate, pure-ish helper so the gate is
- * unit-tested in isolation from the model and timer plumbing.
+ * floor" — any session count passes. Counts across every `rw` store's
+ * transcripts. A separate, pure-ish helper so the gate is unit-tested in
+ * isolation from the model and timer plumbing.
  */
-export async function meetsMinSessions(config: MemoryConfig, store: MemoryStore): Promise<boolean> {
+export async function meetsMinSessions(config: MemoryConfig): Promise<boolean> {
   const minSessions = config.dream?.schedule?.minSessions;
   if (minSessions === undefined || minSessions <= 0) {
     return true;
   }
-  const count = await countSessionTranscripts(store, config.sessionsNamespace);
+  const count = await countSessionTranscripts(config);
   return count >= minSessions;
 }
 
@@ -133,7 +139,7 @@ export async function runDueConsolidations(
     if (config === undefined) {
       return;
     }
-    if (!(await meetsMinSessions(config, config.store))) {
+    if (!(await meetsMinSessions(config))) {
       return;
     }
     const model = await input.resolveModel(config);

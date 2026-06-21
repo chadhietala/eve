@@ -5,7 +5,7 @@ import type { MemoryNamespace } from "#runtime/memory/types.js";
 const ns: MemoryNamespace = {
   agentId: "agent-1",
   scopeId: "slack:c1:t1",
-  scopeType: "working",
+  scopeType: "store",
 };
 
 const otherNs: MemoryNamespace = { ...ns, scopeId: "slack:c1:t2" };
