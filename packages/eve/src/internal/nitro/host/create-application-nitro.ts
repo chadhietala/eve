@@ -29,7 +29,9 @@ import {
   OPTIONAL_ENGINE_PACKAGES_BY_BACKEND_NAME,
 } from "#internal/nitro/host/optional-engine-dependency-plugin.js";
 import { addNitroRoutingImportSpecifierPlugin } from "#internal/nitro/host/nitro-routing-import-specifier-plugin.js";
+import { registerDreamTaskHandler } from "#internal/nitro/host/dream-task-route.js";
 import { registerScheduleTaskHandlers } from "#internal/nitro/host/schedule-task-routes.js";
+import { createDreamRegistration } from "#runtime/memory/dream-registration.js";
 import { SERVER_EXTERNAL_PACKAGES } from "#internal/nitro/host/server-external-packages.js";
 import type { NitroBuildSurface, PreparedApplicationHost } from "#internal/nitro/host/types.js";
 import { createEveVercelOptions } from "#internal/nitro/host/vercel-build-output-config.js";
@@ -640,6 +642,14 @@ export async function createApplicationNitro(
   // schedules.
   const shouldRegisterScheduleTasks =
     !dev && includesApplicationSurface(surface) && preparedHost.scheduleRegistrations.length > 0;
+  // The dream task is framework-owned, not authored: it registers whenever any
+  // agent in the graph declares a memory `dream`, independently of authored
+  // schedules. Like authored schedules it is production-only — `eve dev` does not
+  // register Nitro cron, so dreams do not run on a schedule under `eve dev`.
+  const dreamRegistration =
+    !dev && includesApplicationSurface(surface)
+      ? createDreamRegistration(preparedHost.compileResult.manifest)
+      : undefined;
   const preset = resolveNitroPreset(dev);
   const configuredBackendNames = collectConfiguredSandboxBackendNames(
     preparedHost.compileResult.manifest,
@@ -794,24 +804,37 @@ export async function createApplicationNitro(
     });
   }
 
-  if (shouldRegisterScheduleTasks) {
+  if (shouldRegisterScheduleTasks || dreamRegistration !== undefined) {
     // Replace Vercel's default `/_vercel/cron` path with an unguessable
     // per-build route so users do not need to configure `CRON_SECRET` to
     // protect the cron endpoint. No-op when the Vercel preset is not in
-    // use (e.g. dev mode), where the cron route is never registered.
+    // use (e.g. dev mode), where the cron route is never registered. Shared by
+    // both authored schedules and the dream backstop — any cron entry
+    // is dispatched through this one route.
     applyEveCronHandlerRoute(nitro);
 
     const artifactsConfig: NitroArtifactsConfigInput = createNitroArtifactsConfig({
       appRoot: preparedHost.appRoot,
       dev: nitro.options.dev,
     });
-    registerScheduleTaskHandlers(nitro, {
-      artifactsConfig,
-      dispatchModulePath: resolvePackageSourceFilePath(
-        "src/internal/nitro/routes/schedule-task.ts",
-      ),
-      registrations: preparedHost.scheduleRegistrations,
-    });
+
+    if (shouldRegisterScheduleTasks) {
+      registerScheduleTaskHandlers(nitro, {
+        artifactsConfig,
+        dispatchModulePath: resolvePackageSourceFilePath(
+          "src/internal/nitro/routes/schedule-task.ts",
+        ),
+        registrations: preparedHost.scheduleRegistrations,
+      });
+    }
+
+    if (dreamRegistration !== undefined) {
+      registerDreamTaskHandler(nitro, {
+        artifactsConfig,
+        dispatchModulePath: resolvePackageSourceFilePath("src/internal/nitro/routes/dream-task.ts"),
+        registration: dreamRegistration,
+      });
+    }
   }
   await configureNitroRoutes(nitro, preparedHost, {
     surface,

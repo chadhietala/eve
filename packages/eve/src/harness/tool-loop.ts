@@ -29,6 +29,7 @@ import { formatLanguageModelGatewayId } from "#internal/runtime-model.js";
 import { contextStorage } from "#context/container.js";
 import { AuthKey, ParentSessionKey } from "#context/keys.js";
 import { buildDynamicInstructionMessages } from "#context/dynamic-instruction-lifecycle.js";
+import { buildMemoryOrientationMessages } from "#context/memory-orientation.js";
 import { buildDynamicTools } from "#context/build-dynamic-tools.js";
 import { PendingSkillAnnouncementKey } from "#context/dynamic-skill-lifecycle.js";
 import { toErrorMessage } from "#shared/errors.js";
@@ -569,6 +570,7 @@ export function createToolLoopHarness(config: ToolLoopHarnessConfig): StepFn {
     }
     if (ctx !== undefined) {
       systemMessages.push(...buildDynamicInstructionMessages(ctx));
+      systemMessages.push(...buildMemoryOrientationMessages(ctx));
       const skillAnnouncement = ctx.get(PendingSkillAnnouncementKey);
       if (skillAnnouncement !== undefined && skillAnnouncement.length > 0) {
         systemMessages.push({ role: "system", content: skillAnnouncement });

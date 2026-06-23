@@ -27,11 +27,18 @@ export {
   type MemoryWriteOptions,
 } from "#runtime/memory/store.js";
 
+export { fsTranscriptStore } from "#runtime/transcripts/fs-store.js";
+
 export {
   type TranscriptInfo,
   type TranscriptStore,
   type TranscriptTurn,
   type TranscriptWindow,
 } from "#runtime/transcripts/store.js";
+
+export {
+  vercelBlobTranscriptStore,
+  type VercelBlobTranscriptStoreOptions,
+} from "#runtime/transcripts/vercel-blob-store.js";
 
 export { type MemoryEntry, type MemoryVersion, type WriteKey } from "#runtime/memory/types.js";

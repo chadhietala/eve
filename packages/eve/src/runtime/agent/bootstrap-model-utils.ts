@@ -48,6 +48,36 @@ export function createBootstrapGenerateResult(input: {
 }
 
 /**
+ * Builds a deterministic `doGenerate` result carrying a single tool call. Shared
+ * by mock models that need to drive a tool-calling loop (the `input` is
+ * JSON-encoded the way the SDK delivers tool-call arguments).
+ */
+export function createBootstrapToolCallResult(input: {
+  readonly input: unknown;
+  readonly modelId: string;
+  readonly toolCallId: string;
+  readonly toolName: string;
+}): BootstrapGenerateResult {
+  const base = createBootstrapGenerateResult({
+    inputTokens: 1,
+    modelId: input.modelId,
+    outputTokens: 1,
+    text: "",
+  });
+  const toolCall = {
+    input: JSON.stringify(input.input),
+    toolCallId: input.toolCallId,
+    toolName: input.toolName,
+    type: "tool-call",
+  } as BootstrapGenerateResult["content"][number];
+  return {
+    ...base,
+    content: [toolCall],
+    finishReason: { raw: undefined, unified: "tool-calls" },
+  };
+}
+
+/**
  * Converts a `doGenerate` result into a synchronous `doStream` result by
  * replaying content parts through a `ReadableStream`.
  */

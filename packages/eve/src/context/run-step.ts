@@ -4,6 +4,8 @@ import type { FrameworkContextProvider } from "#context/provider.js";
 import { connectionProvider } from "#context/providers/connection.js";
 import { sandboxProvider } from "#context/providers/sandbox.js";
 import { sessionProvider } from "#context/providers/session.js";
+import { seedMemoryConfig } from "#context/seed-memory-config.js";
+import { maybeDumpSession } from "#context/session-dump-step.js";
 
 /**
  * Framework providers in dependency order.
@@ -39,6 +41,11 @@ export async function withContextScope<T>(
 
   ctx.clearVirtualContext();
 
+  // MemoryConfigKey is codec-less and transient — rebuild it from the
+  // compiled memory definition on every step rather than carrying it across
+  // step boundaries.
+  await seedMemoryConfig(ctx);
+
   for (const provider of frameworkProviders) {
     const result = await provider.create(ctx, session);
     if (result !== undefined) {
@@ -57,6 +64,10 @@ export async function withContextScope<T>(
       committed = await provider.commit(ctx.require(provider.key), committed);
     }
   }
+
+  // Persist the step's transcript to memory so the agent can grep/list/read its
+  // own past sessions. No-op for non-memory agents (no MemoryConfig seeded).
+  await maybeDumpSession(ctx, committed);
 
   if (committed === scopeResult.session) {
     return scopeResult;
