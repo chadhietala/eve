@@ -19,7 +19,12 @@ import type {
   ToolFilterDefinition,
 } from "#runtime/connections/types.js";
 import type { OpenAPISpecSource } from "#public/definitions/connections/openapi.js";
-import type { CompiledWorkspaceResourceRoot } from "#compiler/manifest.js";
+import type {
+  CompiledDream,
+  CompiledStore,
+  CompiledTranscripts,
+  CompiledWorkspaceResourceRoot,
+} from "#compiler/manifest.js";
 import type { WorkspaceRuntimeSpec } from "#runtime/workspace/types.js";
 import type { JsonObject } from "#shared/json.js";
 import type { Optional } from "#shared/optional.js";
@@ -54,6 +59,27 @@ export type ResolvedInstructions = Readonly<
     name: string;
     markdown: string;
   } & (Omit<MarkdownSourceRef<undefined>, "definition"> | ModuleSourceRef)
+>;
+
+/**
+ * Authored memory layer resolved from `memory.{ts,...}` (memory is authored in
+ * TypeScript only).
+ *
+ * Carries the durable projection — the mount `root`, optional orientation text,
+ * the static `dream` (dream) config, and the static shape of each
+ * mounted store (name/path/access). The live store backends and `dream.run`
+ * override resolved from the module map are wired in by memory-config seeding at
+ * turn time; they are not held on the resolved agent.
+ */
+export type ResolvedMemory = Readonly<
+  SourceRef & {
+    name: string;
+    root: string;
+    orientation?: string;
+    stores: readonly CompiledStore[];
+    dream?: CompiledDream;
+    transcripts?: CompiledTranscripts;
+  } & ModuleSourceRef
 >;
 
 /**
@@ -391,6 +417,11 @@ export interface ResolvedAgent {
    * declare one.
    */
   readonly instructions?: ResolvedInstructions;
+  /**
+   * Authored memory layer resolved from `memory.{ts,...}` (memory is authored
+   * in TypeScript only), or `undefined` when the agent does not declare one.
+   */
+  readonly memory?: ResolvedMemory;
   /**
    * Authored sandbox override for this agent, when one exists. `null`
    * means the agent uses the framework default sandbox unchanged.

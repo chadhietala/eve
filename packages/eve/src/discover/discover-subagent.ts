@@ -14,6 +14,7 @@ import {
   DISCOVER_TOOLS_DIRECTORY_INVALID,
   discoverFlatModuleSource,
   discoverInstructionsSource,
+  discoverMemorySource,
   discoverNamedSourceDirectory,
   readSortedDirectoryEntries,
 } from "#discover/grammar.js";
@@ -208,6 +209,13 @@ async function discoverLocalSubagentPackage(input: {
   });
   diagnostics.push(...instructionsResult.diagnostics);
 
+  const memoryResult = await discoverMemorySource({
+    rootEntries,
+    rootPath: input.subagentRoot,
+    source: input.source,
+  });
+  diagnostics.push(...memoryResult.diagnostics);
+
   const configModuleResult = discoverFlatModuleSource({
     missingDiagnostic: {
       code: DISCOVER_REQUIRED_SUBAGENT_CONFIG_MODULE_MISSING,
@@ -288,6 +296,7 @@ async function discoverLocalSubagentPackage(input: {
     hooks: hooksResult.sources,
     lib: libResult.lib,
     instructions: instructionsResult.instructions,
+    memory: memoryResult.memory,
     sandbox: sandboxResult.sandbox,
     sandboxWorkspaces:
       sandboxResult.sandboxWorkspace === null ? [] : [sandboxResult.sandboxWorkspace],

@@ -6,6 +6,7 @@ import {
   type CompiledDynamicSkillDefinition,
   type CompiledDynamicToolDefinition,
   type CompiledInstructions,
+  type CompiledMemory,
   type CompiledSkillDefinition,
   type CompiledToolDefinition,
   createCompiledAgentManifest,
@@ -20,6 +21,7 @@ import type { ManifestCompileContext } from "#compiler/normalize-helpers.js";
 import { compileHookEntry } from "#compiler/normalize-hook.js";
 import { compileSandboxDefinition } from "#compiler/normalize-sandbox.js";
 import { compileInstructionsEntry } from "#compiler/normalize-instructions.js";
+import { compileMemoryEntry } from "#compiler/normalize-memory.js";
 import { compileScheduleDefinition } from "#compiler/normalize-schedule.js";
 import { compileSkillSource } from "#compiler/normalize-skill.js";
 import { compileSubagentGraph } from "#compiler/normalize-subagent.js";
@@ -158,6 +160,13 @@ async function compileAgentNodeManifest(
             sourceKind: "module",
           };
 
+  const compiledMemoryEntries = await Promise.all(
+    manifest.memory.map((source) =>
+      compileMemoryEntry(manifest.agentRoot, source, { externalDependencies }),
+    ),
+  );
+  const composedMemory: CompiledMemory | undefined = composeCompiledMemory(compiledMemoryEntries);
+
   return createCompiledAgentNodeManifest({
     agentRoot: manifest.agentRoot,
     appRoot: manifest.appRoot,
@@ -194,8 +203,34 @@ async function compileAgentNodeManifest(
     dynamicInstructions,
     skills,
     instructions: composedInstructions,
+    memory: composedMemory,
     tools,
   });
+}
+
+/**
+ * Composes the discovered memory sources into a single compiled definition.
+ *
+ * Memory is optional, so an empty list yields `undefined`. Configuration
+ * (root, store, handlers) is taken from the first source — the flat
+ * `memory.ts` leads when present — and the orientation text of every source is
+ * concatenated so a flat `memory.ts` and a `memory/` directory compose into one
+ * orientation.
+ */
+function composeCompiledMemory(entries: readonly CompiledMemory[]): CompiledMemory | undefined {
+  const [first, ...rest] = entries;
+  if (first === undefined) {
+    return undefined;
+  }
+  if (rest.length === 0) {
+    return first;
+  }
+
+  const orientations = entries
+    .map((entry) => entry.orientation)
+    .filter((orientation): orientation is string => orientation !== undefined);
+
+  return orientations.length === 0 ? first : { ...first, orientation: orientations.join("\n\n") };
 }
 
 function mergeExternalDependencies(

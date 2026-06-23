@@ -160,7 +160,11 @@ async function isFlatAgentRoot(source: ProjectSource, directoryPath: string): Pr
 
   return Array.from(entries.entries()).some(([name, entryType]) => {
     const entryKind = classifyAgentRootEntry(name, entryType);
-    return entryKind !== "unknown" && entryKind !== "lib-directory";
+    // `lib/` and `memory/` are auxiliary and optional — a directory holding
+    // only those is not, on its own, an agent root.
+    return (
+      entryKind !== "unknown" && entryKind !== "lib-directory" && entryKind !== "memory-directory"
+    );
   });
 }
 

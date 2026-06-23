@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { buildMemoryAgentProject } from "#internal/testing/memory-agent-source.js";
 import { DISCOVER_SANDBOX_DIRECTORY_INVALID } from "#discover/grammar.js";
 import { discoverAgent } from "#discover/discover-agent.js";
+import { AGENT_SOURCE_MANIFEST_VERSION } from "#discover/manifest.js";
 import {
   DISCOVER_LOCAL_SUBAGENT_SCHEDULES_INVALID,
   DISCOVER_REQUIRED_SUBAGENT_CONFIG_MODULE_MISSING,
@@ -91,7 +92,7 @@ describe("discoverSubagents (memory)", () => {
             sourceId: "tools/search.js",
           },
         ],
-        version: 12,
+        version: AGENT_SOURCE_MANIFEST_VERSION,
       },
       rootPath: researcherRoot,
       sourceId: "subagents/researcher",
@@ -136,7 +137,7 @@ describe("discoverSubagents (memory)", () => {
           logicalPath: "agent.js",
           sourceId: "agent.js",
         },
-        version: 12,
+        version: AGENT_SOURCE_MANIFEST_VERSION,
       },
       rootPath: reviewerRoot,
       sourceId: "subagents/reviewer",

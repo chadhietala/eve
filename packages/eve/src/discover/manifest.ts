@@ -20,7 +20,7 @@ export const AGENT_SOURCE_MANIFEST_KIND = "eve-agent-discovery-manifest";
 /**
  * Current manifest schema version.
  */
-export const AGENT_SOURCE_MANIFEST_VERSION = 12;
+export const AGENT_SOURCE_MANIFEST_VERSION = 14;
 
 /**
  * Channel source reference preserved by the discovery manifest.
@@ -47,6 +47,15 @@ export interface ConnectionSourceRef extends ModuleSourceRef {
  * normalization.
  */
 export type InstructionsSourceRef = MarkdownSourceRef<InstructionsDefinition> | ModuleSourceRef;
+
+/**
+ * Memory source reference preserved by discovery for compiler
+ * normalization. Memory is authored in TypeScript only: a
+ * `memory.{ts,cts,mts,js,cjs,mjs}` (or a module inside the `memory/`
+ * directory) is a module reference resolved — and brand-checked — at compile
+ * time. There is no markdown memory form.
+ */
+export type MemorySourceRef = ModuleSourceRef;
 
 /**
  * Skill source reference preserved by the discovery manifest.
@@ -158,6 +167,16 @@ export interface AgentSourceManifest {
    */
   instructions: InstructionsSourceRef[];
   /**
+   * Authored memory sources discovered at the agent root.
+   *
+   * Memory is authored in TypeScript: a flat `memory.{ts,...}` module and/or a
+   * `memory/` directory of modules. Memory is optional — this array is empty
+   * when no memory is authored, and discovery emits no diagnostic for its
+   * absence. A stray `memory.md` is not a memory source; discovery flags it
+   * with a diagnostic telling the author to use `memory.ts`.
+   */
+  memory: MemorySourceRef[];
+  /**
    * Authored sandbox module discovered for this agent, or `null` when
    * the agent does not declare one. Every agent owns at most one
    * sandbox.
@@ -197,6 +216,7 @@ export interface CreateAgentSourceManifestInput {
    */
   packageName?: string;
   instructions?: readonly InstructionsSourceRef[];
+  memory?: readonly MemorySourceRef[];
   sandbox?: SandboxSourceRef | null;
   sandboxWorkspaces?: readonly SandboxWorkspaceFolderSourceRef[];
   schedules?: readonly ScheduleSourceRef[];
@@ -262,6 +282,7 @@ export function createAgentSourceManifest(
     diagnosticsSummary: summarizeDiscoverDiagnostics(input.diagnostics ?? []),
     hooks: [...(input.hooks ?? [])],
     instructions: [...(input.instructions ?? [])],
+    memory: [...(input.memory ?? [])],
     lib: [...(input.lib ?? [])],
     kind: AGENT_SOURCE_MANIFEST_KIND,
     sandbox: input.sandbox ?? null,

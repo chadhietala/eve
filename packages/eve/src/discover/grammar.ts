@@ -1,7 +1,7 @@
 import type { Dirent } from "node:fs";
 import { join } from "node:path";
 
-import type { ModuleSourceRef } from "#shared/source-ref.js";
+import type { MarkdownSourceRef, ModuleSourceRef } from "#shared/source-ref.js";
 import type { InstructionsDefinition } from "#public/definitions/instructions.js";
 import { lowerInstructionsMarkdown } from "#internal/helpers/markdown.js";
 import {
@@ -10,7 +10,11 @@ import {
   type DiscoverDiagnostic,
 } from "#discover/diagnostics.js";
 import { type DirectoryEntryType, getDirectoryEntryType } from "#discover/filesystem.js";
-import { type InstructionsSourceRef, createModuleSourceRef } from "#discover/manifest.js";
+import {
+  type InstructionsSourceRef,
+  type MemorySourceRef,
+  createModuleSourceRef,
+} from "#discover/manifest.js";
 import { discoverMarkdownSource } from "#discover/markdown.js";
 import { discoverNamedSourceDirectory } from "#discover/named-source-directory.js";
 import type { ProjectSource, ProjectSourceEntry } from "#discover/project-source.js";
@@ -82,6 +86,20 @@ export const DISCOVER_SANDBOX_DIRECTORY_INVALID = "discover/sandbox-directory-in
  * directory.
  */
 export const DISCOVER_INSTRUCTIONS_DIRECTORY_INVALID = "discover/instructions-directory-invalid";
+
+/**
+ * Shared diagnostic emitted when the authored `memory/` root is not a
+ * directory.
+ */
+export const DISCOVER_MEMORY_DIRECTORY_INVALID = "discover/memory-directory-invalid";
+
+/**
+ * Shared diagnostic emitted when memory is authored in markdown (`memory.md`
+ * at the agent root or a `.md` file inside `memory/`). Memory is authored in
+ * TypeScript only, so a markdown file is not a memory source — this diagnostic
+ * tells the author to use `memory.ts` instead of failing silently.
+ */
+export const DISCOVER_MEMORY_MARKDOWN_UNSUPPORTED = "discover/memory-markdown-unsupported";
 
 /**
  * Shared diagnostic emitted when an authored `channels/**` filename or
@@ -272,7 +290,98 @@ export async function discoverInstructionsSource(input: {
   };
 }
 
-async function discoverSlotSource(input: {
+/**
+ * Discovers memory sources from a root directory.
+ *
+ * Memory is authored in TypeScript only — a flat `agent/memory.{ts,cts,mts,
+ * js,cjs,mjs}` module and/or a `agent/memory/` directory of modules. Memory is
+ * always optional: when no source is authored the result is empty and no
+ * diagnostic is emitted. There is no legacy-slot fallback. A flat module and a
+ * directory can coexist — the flat module appears first in the returned array.
+ *
+ * Markdown memory is not supported. A stray `memory.md` at the root, or a
+ * `.md` leaf inside `memory/`, is flagged with
+ * {@link DISCOVER_MEMORY_MARKDOWN_UNSUPPORTED} so the author learns memory must
+ * be authored in `memory.ts` instead of failing silently.
+ */
+export async function discoverMemorySource(input: {
+  rootEntries: readonly ProjectSourceEntry[];
+  rootPath: string;
+  source: ProjectSource;
+}): Promise<{
+  diagnostics: DiscoverDiagnostic[];
+  memory: MemorySourceRef[];
+}> {
+  const hasDirectory = input.rootEntries.some((e) => e.name === "memory" && e.isDirectory());
+  const diagnostics: DiscoverDiagnostic[] = [];
+
+  const strayMarkdown = input.rootEntries.find(
+    (e) => e.isFile() && e.name.toLowerCase() === "memory.md",
+  );
+  if (strayMarkdown !== undefined) {
+    diagnostics.push(createMemoryMarkdownUnsupportedDiagnostic(join(input.rootPath, "memory.md")));
+  }
+
+  const flatResult = discoverFlatModuleSource({
+    rootEntries: input.rootEntries,
+    rootPath: input.rootPath,
+    slotName: "memory",
+  });
+  diagnostics.push(...flatResult.diagnostics);
+
+  if (hasDirectory) {
+    const dirResult = await discoverNamedSourceDirectory({
+      directoryName: "memory",
+      invalidDirectoryCode: DISCOVER_MEMORY_DIRECTORY_INVALID,
+      invalidDirectoryMessage: `Expected "${join(input.rootPath, "memory")}" to be a directory of authored memory.`,
+      recursive: false,
+      rootEntries: input.rootEntries,
+      rootPath: input.rootPath,
+      source: input.source,
+      unsupportedFileCode: DISCOVER_MEMORY_MARKDOWN_UNSUPPORTED,
+      unsupportedFileMessage: (sourcePath) =>
+        sourcePath.toLowerCase().endsWith(".md")
+          ? memoryMarkdownUnsupportedMessage(sourcePath)
+          : `Expected "${sourcePath}" to be an authored memory module within "memory/".`,
+    });
+    const memory = [...dirResult.sources];
+    if (flatResult.module !== undefined) {
+      memory.unshift(flatResult.module);
+    }
+    return {
+      diagnostics: [...diagnostics, ...dirResult.diagnostics],
+      memory,
+    };
+  }
+
+  return {
+    diagnostics,
+    memory: flatResult.module !== undefined ? [flatResult.module] : [],
+  };
+}
+
+/**
+ * Builds the shared message telling an author that markdown memory is not
+ * supported and memory must be authored in TypeScript.
+ */
+function memoryMarkdownUnsupportedMessage(sourcePath: string): string {
+  return `Memory cannot be authored in markdown ("${sourcePath}"). Author memory in TypeScript ("memory.ts" or a module inside "memory/") — markdown memory is not supported.`;
+}
+
+/**
+ * Creates the {@link DISCOVER_MEMORY_MARKDOWN_UNSUPPORTED} diagnostic for a
+ * stray markdown memory file.
+ */
+function createMemoryMarkdownUnsupportedDiagnostic(sourcePath: string): DiscoverDiagnostic {
+  return createDiscoverErrorDiagnostic({
+    code: DISCOVER_MEMORY_MARKDOWN_UNSUPPORTED,
+    message: memoryMarkdownUnsupportedMessage(sourcePath),
+    sourcePath,
+  });
+}
+
+async function discoverSlotSource<TDefinition = InstructionsDefinition>(input: {
+  lowerMarkdown?: (markdown: string) => TDefinition;
   markdownFileName: string;
   moduleBaseName: string;
   rootEntries: readonly ProjectSourceEntry[];
@@ -281,7 +390,7 @@ async function discoverSlotSource(input: {
   source: ProjectSource;
 }): Promise<{
   diagnostics: DiscoverDiagnostic[];
-  source?: InstructionsSourceRef;
+  source?: MarkdownSourceRef<TDefinition> | ModuleSourceRef;
 }> {
   const candidates = collectFlatSlotCandidates(input.rootEntries, {
     markdownFileName: input.markdownFileName,
@@ -312,11 +421,13 @@ async function discoverSlotSource(input: {
   }
 
   if (candidates.markdownFileName !== undefined) {
+    const lower =
+      input.lowerMarkdown ?? (lowerInstructionsMarkdown as (markdown: string) => TDefinition);
     return {
       diagnostics: [],
-      source: await discoverMarkdownSource({
+      source: await discoverMarkdownSource<TDefinition>({
         logicalPath: input.markdownFileName,
-        lower: lowerInstructionsMarkdown,
+        lower,
         source: input.source,
         sourcePath: join(input.rootPath, candidates.markdownFileName),
       }),

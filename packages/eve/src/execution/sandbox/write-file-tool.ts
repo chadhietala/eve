@@ -8,6 +8,11 @@ import {
   setReadFileStamp,
 } from "#runtime/framework-tools/file-state.js";
 import { validateAbsoluteFilePath } from "#execution/sandbox/require-sandbox.js";
+import {
+  memoryRead,
+  memoryWrite,
+  shouldRedirectToMemory,
+} from "#execution/sandbox/memory-redirect.js";
 import type { SandboxSession } from "#shared/sandbox-session.js";
 
 // ---------------------------------------------------------------------------
@@ -52,17 +57,28 @@ export async function executeWriteFileOnSandbox(
   const normalizedPath = normalizeModelPath(filePath);
   const targetKey = buildReadFileTargetKey(normalizedPath);
 
+  // Paths under the configured memory root read and write through the memory
+  // store instead of the sandbox. The read-before-write and stale-read
+  // semantics below are identical in both cases.
+  const redirect = shouldRedirectToMemory(normalizedPath);
+
   // ── Read current file ───────────────────────────────────────────────
   // The full read is required even for new-file detection because
   // stale-write detection hashes the current content. This is a known
   // cost: the entire file is read and hashed before every write. A
   // separate `exists()` primitive would avoid this for new files but
   // would require a sandbox session API change.
-  const currentContent = await sandbox.readTextFile({ path: filePath });
+  const currentContent = redirect
+    ? await memoryRead(normalizedPath)
+    : await sandbox.readTextFile({ path: filePath });
 
   if (currentContent === null) {
     // ── File does not exist — write immediately, no prior read needed ──
-    await sandbox.writeTextFile({ content, path: filePath });
+    if (redirect) {
+      await memoryWrite(normalizedPath, content);
+    } else {
+      await sandbox.writeTextFile({ content, path: filePath });
+    }
 
     const freshStamp = createReadFileStamp({
       content,
@@ -101,7 +117,11 @@ export async function executeWriteFileOnSandbox(
   }
 
   // ── Write and refresh stamp ─────────────────────────────────────────
-  await sandbox.writeTextFile({ content, path: filePath });
+  if (redirect) {
+    await memoryWrite(normalizedPath, content);
+  } else {
+    await sandbox.writeTextFile({ content, path: filePath });
+  }
 
   const freshStamp = createReadFileStamp({
     content,

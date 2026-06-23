@@ -40,7 +40,7 @@ export const ROOT_COMPILED_AGENT_NODE_ID = "__root__";
 /**
  * Current compiled manifest schema version.
  */
-export const COMPILED_AGENT_MANIFEST_VERSION = 32;
+export const COMPILED_AGENT_MANIFEST_VERSION = 33;
 
 /**
  * Compiled channel entry preserved in the compiled manifest.
@@ -125,6 +125,35 @@ export type CompiledAgentDefinition = Omit<InternalAgentDefinition, "model" | "c
  * manifest.
  */
 export type CompiledInstructions = z.infer<typeof compiledInstructionsSchema>;
+
+/**
+ * Normalized authored memory layer preserved in the compiled manifest.
+ *
+ * Serializable projection of a {@link MemoryDefinition}: the mount `root`, the
+ * optional `orientation` text, and the static shape of each mounted store
+ * (name/path/access). The live store backends are not serialized; they resolve
+ * from the module map at runtime via {@link ModuleSourceRef.logicalPath},
+ * mirroring how tools and connections resolve their authored modules.
+ */
+export type CompiledMemory = z.infer<typeof compiledMemorySchema>;
+
+/**
+ * Static, serializable projection of one mounted store (name/path/access). See
+ * {@link compiledStoreSchema} for the field-level documentation.
+ */
+export type CompiledStore = z.infer<typeof compiledStoreSchema>;
+
+/**
+ * Static, serializable projection of a memory `dream` config.
+ * See {@link compiledDreamSchema} for the field-level documentation.
+ */
+export type CompiledDream = z.infer<typeof compiledDreamSchema>;
+
+/**
+ * Static, serializable projection of the transcript-log config (retention +
+ * whether a backend was supplied). See {@link compiledTranscriptsSchema}.
+ */
+export type CompiledTranscripts = z.infer<typeof compiledTranscriptsSchema>;
 
 /**
  * Normalized authored skill preserved in the compiled manifest.
@@ -397,6 +426,93 @@ const compiledInstructionsSchema = z
   })
   .strict();
 
+/**
+ * Static, serializable projection of a memory `dream` config.
+ *
+ * Carries only the durable fields — `model`, `instructions`, `window`, `cron`,
+ * and a `hasRun` flag recording whether the author supplied a `run` override. The
+ * live `run` function is never serialized; it resolves from the module map at
+ * runtime, with `hasRun` telling the runtime whether to look for it.
+ */
+/** A serialized {@link Duration}: a number of milliseconds or a suffix string. */
+const compiledDurationSchema = z.union([z.string(), z.number()]);
+
+const compiledDreamSchema = z
+  .object({
+    model: z.string().optional(),
+    instructions: z.string().optional(),
+    /** Lookback window the dream mines (e.g. `"12h"`); resolved at fire time. */
+    window: compiledDurationSchema.optional(),
+    /** Cron cadence the dream runs on (e.g. `"0 3 * * *"`); defaults to daily. */
+    cron: z.string().optional(),
+    /** Whether the author supplied a `run` override (`.ts` form only). */
+    hasRun: z.boolean(),
+  })
+  .strict();
+
+/**
+ * Static, serializable projection of one mounted store: its name, optional
+ * mount sub-path, access level, and one-line description. The live backend is
+ * NOT serialized — it resolves from the module map at runtime via the memory
+ * source's logical path.
+ */
+const compiledStoreSchema = z
+  .object({
+    /** Store name — the key in `defineMemory({ stores })`. */
+    name: z.string(),
+    /** Mount sub-path under the root; absent means "default to the store name". */
+    path: z.string().optional(),
+    /** Access level. Absent means the runtime default `"rw"`. */
+    access: z.union([z.literal("ro"), z.literal("rw")]).optional(),
+    /** One-line purpose, injected into the system prompt as the mount note. */
+    description: z.string().optional(),
+  })
+  .strict();
+
+/**
+ * Static, serializable projection of the transcript-log config: retention only.
+ * The live backend is NOT serialized — like a store backend it resolves from the
+ * module map at runtime; `hasBackend` records whether the author supplied one.
+ */
+const compiledTranscriptsSchema = z
+  .object({
+    retention: z.object({ maxAge: compiledDurationSchema }).strict().optional(),
+    /** Whether the author supplied a custom transcript backend. */
+    hasBackend: z.boolean(),
+  })
+  .strict();
+
+const compiledMemorySchema = z
+  .object({
+    name: z.string(),
+    logicalPath: z.string(),
+    /** Absolute POSIX mount root the file tools redirect under. */
+    root: z.string(),
+    /**
+     * Read-only orientation text injected as a system pointer (like
+     * instructions), not a file under the mount.
+     */
+    orientation: z.string().optional(),
+    /**
+     * Static shape of each mounted store (name/path/access/description). A memory
+     * layer always declares at least one store. The live backends resolve from
+     * the module map at runtime.
+     */
+    stores: z.array(compiledStoreSchema),
+    /**
+     * Static dream config. Present when the author
+     * declared a `dream`; the live `run` override resolves from the module map
+     * at runtime (see {@link compiledDreamSchema}).
+     */
+    dream: compiledDreamSchema.optional(),
+    /** Static transcript-log config (retention + whether a backend was supplied). */
+    transcripts: compiledTranscriptsSchema.optional(),
+    exportName: z.string().optional(),
+    sourceId: z.string(),
+    sourceKind: z.literal("module"),
+  })
+  .strict();
+
 const compiledSkillBaseFields = {
   name: z.string(),
   description: z.string(),
@@ -604,6 +720,7 @@ const compiledAgentNodeManifestSchema = z
     remoteAgents: z.array(compiledRemoteAgentNodeSchema),
     skills: z.array(compiledSkillSourceSchema).readonly(),
     instructions: compiledInstructionsSchema.optional(),
+    memory: compiledMemorySchema.optional(),
     tools: z.array(compiledToolDefinitionSchema),
     workspaceResourceRoot: compiledWorkspaceResourceRootSchema,
   })
@@ -657,6 +774,7 @@ export const compiledAgentManifestSchema = z
     subagentEdges: z.array(compiledSubagentEdgeSchema),
     subagents: z.array(compiledSubagentNodeSchema),
     instructions: compiledInstructionsSchema.optional(),
+    memory: compiledMemorySchema.optional(),
     tools: z.array(compiledToolDefinitionSchema),
     version: z.literal(COMPILED_AGENT_MANIFEST_VERSION),
     workspaceResourceRoot: compiledWorkspaceResourceRootSchema,
@@ -685,6 +803,7 @@ export function createCompiledAgentNodeManifest(input: {
   readonly schedules?: readonly CompiledScheduleDefinition[];
   readonly skills?: readonly CompiledSkillDefinition[];
   readonly instructions?: CompiledInstructions;
+  readonly memory?: CompiledMemory;
   readonly tools?: readonly CompiledToolDefinition[];
   readonly workspaceResourceRoot?: CompiledWorkspaceResourceRoot;
 }): CompiledAgentNodeManifest {
@@ -770,6 +889,10 @@ export function createCompiledAgentNodeManifest(input: {
     node.instructions = input.instructions;
   }
 
+  if (input.memory !== undefined) {
+    node.memory = input.memory;
+  }
+
   return node;
 }
 
@@ -835,6 +958,7 @@ export function createCompiledAgentManifest(input: {
   readonly subagentEdges?: readonly CompiledSubagentEdge[];
   readonly subagents?: readonly CompiledSubagentNode[];
   readonly instructions?: CompiledInstructions;
+  readonly memory?: CompiledMemory;
   readonly tools?: readonly CompiledToolDefinition[];
 }): CompiledAgentManifest {
   return {

@@ -1,0 +1,186 @@
+---
+title: "Memory"
+description: "Give an agent a durable filesystem it can read, write, grep, and consolidate across sessions — mounted at /mnt/memory and backed by storage you choose."
+---
+
+Memory is a durable filesystem an agent can read and write across sessions. The framework mounts it at `/mnt/memory` and routes the agent's ordinary file tools (read, write, grep, ls) there, so the model persists and recalls context with the same moves it already uses on any other directory. Nothing is mounted unless you declare it — an agent with no memory source has no memory.
+
+Memory is a filesystem, not a query API. Search, RAG, and knowledge-graph patterns are built with eve's normal [tool system](./tools); the memory layer is for durable files the agent treats as its own scratch space and long-term notes.
+
+A memory source is authored in TypeScript: a `memory.ts` at the agent root (or an `agent/memory/` directory of modules for multi-file setups). Both the root agent and declared [subagents](./subagents) may have one.
+
+`memory.ts` declares the **stores** that get mounted, and optionally orientation text and consolidation. A memory layer must declare at least one store. Orientation text is supplied through the `orientation` field — it becomes a system pointer that tells the model how to use its memory.
+
+```ts title="agent/memory.ts"
+import { defineMemory, fsStore } from "eve/memory";
+
+export default defineMemory({
+  stores: {
+    notes: { backend: fsStore("./.eve/notes") },
+  },
+  orientation: "Persist durable facts under /mnt/memory/notes.",
+});
+```
+
+## `defineMemory`
+
+```ts
+interface MemoryDefinition {
+  stores: Record<string, StoreMount>; // at most 8
+  orientation?: string;
+  dream?: DreamConfig; // consolidation
+  transcripts?: TranscriptConfig; // the session log a dream reads
+}
+
+interface StoreMount {
+  backend: MemoryStore; // the storage — and the sharing key
+  path?: string; // mount sub-path under /mnt/memory; defaults to the store name
+  access?: "ro" | "rw"; // defaults to "rw"
+  description?: string; // one-line purpose; the routing signal for consolidation
+}
+```
+
+`defineMemory` is a type-level pass-through that brands the definition so the compiler and runtime can validate it. The compiler enforces the limits (at least one store, and at most 8).
+
+## Stores
+
+Each entry in `stores` mounts one backend under `/mnt/memory`. The map key is the store's **name**; by default it is also the mount path, so `notes` mounts at `/mnt/memory/notes`. Set `path` to mount elsewhere:
+
+```ts title="agent/memory.ts"
+import { defineMemory, fsStore } from "eve/memory";
+
+export default defineMemory({
+  stores: {
+    notes: { backend: fsStore("./.eve/notes") }, // → /mnt/memory/notes
+    "org-conventions": { backend: fsStore("./.eve/org"), path: "org", access: "ro" }, // → /mnt/memory/org (read-only)
+  },
+});
+```
+
+The file tools route a `/mnt/memory/...` path to the store whose mount path is the longest matching prefix. A read-only (`"ro"`) store rejects writes through the mount with an error the model sees.
+
+Each store may carry a one-line `description` of what it holds ("User preferences and per-project facts."). It is injected into the system prompt as the mount note, and it is the **routing signal** a [consolidation](#consolidation-the-dream) uses to file each fact into the store that fits.
+
+### Backends
+
+`fsStore(dir)` is the built-in backend: it persists each store as files under `dir`. Any object implementing the `MemoryStore` interface works too, so you can back a store with a database, an object store, or a network service:
+
+```ts
+interface MemoryStore {
+  read(ns: MemoryNamespace, path: string): Promise<Uint8Array | null>;
+  write(
+    ns: MemoryNamespace,
+    path: string,
+    bytes: Uint8Array,
+    key: string,
+    options?: MemoryWriteOptions,
+  ): Promise<void>;
+  list(ns: MemoryNamespace, prefix: string): Promise<readonly MemoryEntry[]>;
+  // grep + versioning (listVersions / readVersion) round out the contract.
+}
+```
+
+The `backend` is the store's identity. The name is only a local mount alias.
+
+## Sharing across agents
+
+Two agents share a store by pointing at the **same backend** — regardless of what each calls it locally. Sharing is by backend identity, never by name or agent id. Give two agents the same `fsStore` directory (or the same custom backend) and they read and write the same curated memory and feed the same consolidation:
+
+```ts title="agent/memory.ts"
+import { defineMemory, fsStore } from "eve/memory";
+
+// Agent A
+export default defineMemory({
+  stores: { notes: { backend: fsStore("./.eve/team") } },
+});
+```
+
+```ts title="other-agent/memory.ts"
+import { defineMemory, fsStore } from "eve/memory";
+
+// Agent B — different local name, SAME backend directory → shared
+export default defineMemory({
+  stores: { shared: { backend: fsStore("./.eve/team") } },
+});
+```
+
+Conversely, two separate backend instances never share, even under the same name.
+
+## Transcripts
+
+A **transcript** is the turn-by-turn record of one session — the raw material a consolidation mines. It is eve-owned infrastructure: the framework appends each session's turns to a single session-level log (one append-only record per session, shared by the whole agent, not per store). Transcripts are never mounted under `/mnt/memory` and never readable by the model.
+
+Transcripts are recorded only when the agent declares a [`dream`](#consolidation-the-dream) (there is nothing to feed otherwise). Configure the log's durable backend and how long entries live with `transcripts`:
+
+```ts
+interface TranscriptConfig {
+  backend?: TranscriptStore; // defaults to a filesystem store in dev
+  retention?: { maxAge: Duration }; // e.g. "30d" — prune older transcripts
+}
+```
+
+```ts title="agent/memory.ts"
+import { defineMemory, fsStore, fsTranscriptStore } from "eve/memory";
+
+export default defineMemory({
+  stores: { notes: { backend: fsStore("./.eve/notes") } },
+  dream: { window: "12h" },
+  transcripts: {
+    backend: fsTranscriptStore("./.eve/transcripts"),
+    retention: { maxAge: "30d" },
+  },
+});
+```
+
+`fsTranscriptStore(dir)` is the dev/local default. For production on Vercel, `vercelBlobTranscriptStore()` persists the log to Vercel Blob (it reads `BLOB_READ_WRITE_TOKEN`). Any object implementing the `TranscriptStore` interface works too. Retention is an absolute lifetime; keep `maxAge` ≥ the dream's `window`, since you cannot prune what a pending dream still needs. Pruning runs as part of the consolidation sweep.
+
+## Consolidation (the "dream")
+
+A **dream** periodically folds a window of the session transcripts into the curated, agent-visible memory. It is **declarative**: you give `instructions` (and optionally a `window` and `model`), and the framework runs the synthesis — gathering the windowed sessions, reading the stores, and writing curated entries back into each writable store, steered by each store's `description`. The curated `MEMORY.md` of each store is injected into the agent's prompt from the first turn, so consolidated memory is always in context.
+
+```ts title="agent/memory.ts"
+import { defineMemory, fsStore } from "eve/memory";
+
+export default defineMemory({
+  stores: {
+    notes: { backend: fsStore("./.eve/notes"), description: "User preferences and project facts." },
+  },
+  dream: {
+    window: "12h", // how far back to mine; defaults to a 24h backstop
+    instructions: "Keep durable user preferences and project facts; drop chit-chat.",
+    schedule: { idleMs: 600_000 },
+  },
+});
+```
+
+`window` is the lookback resolved against "now" when the dream fires — the framework gathers every session touched in it. `schedule` controls when it fires:
+
+- `idleMs` — re-arms a durable per-agent timer while the agent is active; it fires once the agent has been idle that long. A cron backstop sweeps any due timers.
+- `cron` — a standard 5-field expression (evaluated in UTC).
+
+Because transcripts pool every sharing agent's sessions, a shared agent's dream consolidates what _all_ of them learned.
+
+### Custom synthesis (escape hatch)
+
+The declarative pipeline covers the common case. For a bespoke pipeline — a knowledge-graph builder, a RAG indexer, two models in sequence — provide `run` instead of `instructions`. It receives a `DreamContext` with the windowed `sessions` (read-only input) and read/write access to a store's curated `memory`:
+
+```ts title="agent/memory.ts"
+import { defineMemory, fsStore, type DreamContext } from "eve/memory";
+
+export default defineMemory({
+  stores: { notes: { backend: fsStore("./.eve/notes") } },
+  dream: {
+    async run(ctx: DreamContext) {
+      const prior = (await ctx.memory.read("index.md")) ?? "";
+      const summary = await summarize(ctx.model, prior, ctx.sessions);
+      await ctx.memory.write("index.md", summary);
+    },
+  },
+});
+```
+
+The transcripts are never mutated — a dream only ever writes the curated area, so it can re-run safely.
+
+## Versioning and concurrency
+
+Every write that changes content records an immutable version. List and restore history through the store contract (`listVersions` / `readVersion`), and restore by reading an old version and writing it back. When agents that share a store write concurrently, the file tools use transparent compare-and-swap with bounded retry: the last writer still wins the head, but every superseded revision survives in the version trail, so nothing is silently clobbered.
