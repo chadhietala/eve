@@ -77,20 +77,39 @@ interface MemoryStore {
 }
 ```
 
-Two backends ship:
-
 - **`fsStore(dir)`** — persists each store as files under `dir`. The dev/local default. Its compare-and-swap is correct for a single writer, so it is not intended to back concurrent writers in production.
-- **`conditionalObjectMemoryStore(objectStore)`** — the durable, **multi-writer-safe** backend. It delegates compare-and-swap to an object store's atomic conditional write (`If-Match` / `If-None-Match`), so concurrent writers across sandboxes cannot both win the head. Adapt S3, Cloudflare R2, or Vercel Blob to the small `ObjectStore` port (whose `put` maps to those preconditions); an `InMemoryObjectStore` is provided for tests and dev.
+
+For production, the durable, **multi-writer-safe** backends delegate compare-and-swap to an object store's atomic conditional write (`If-Match` / `If-None-Match`), so concurrent writers across sandboxes cannot both win the head. eve ships one per provider.
+
+#### Vercel Blob
+
+`vercelBlobMemoryStore()` backs a store with Vercel Blob, using its native conditional writes for the compare-and-swap. It reads `BLOB_READ_WRITE_TOKEN` from the environment.
 
 ```ts title="agent/memory.ts"
-import { conditionalObjectMemoryStore, defineMemory, type ObjectStore } from "eve/memory";
-
-const bucket: ObjectStore = createS3ObjectStore(/* … */); // your adapter
+import { defineMemory, vercelBlobMemoryStore } from "eve/memory";
 
 export default defineMemory({
-  stores: { notes: { backend: conditionalObjectMemoryStore(bucket) } },
+  stores: { notes: { backend: vercelBlobMemoryStore() } },
 });
 ```
+
+#### S3-compatible
+
+`s3MemoryStore(client)` backs a store with any S3-compatible bucket. You wire the small `S3Client` port to `@aws-sdk/client-s3` (so eve takes no AWS dependency), mapping `IfMatch` / `IfNoneMatch` and a 412 to `S3PreconditionError`:
+
+```ts title="agent/memory.ts"
+import { defineMemory, s3MemoryStore, type S3Client } from "eve/memory";
+
+const client: S3Client = createS3Client(/* wire @aws-sdk/client-s3 — see the s3MemoryStore docs */);
+
+export default defineMemory({
+  stores: { notes: { backend: s3MemoryStore(client) } },
+});
+```
+
+#### Custom
+
+For a different conditional-write object store, implement the small `ObjectStore` port and wrap it once with `conditionalObjectMemoryStore(yourObjectStore)` to get the same durable, versioned `MemoryStore`. For something else entirely, implement the `MemoryStore` interface directly.
 
 The `backend` is the store's identity. The name is only a local mount alias.
 

@@ -31,6 +31,18 @@ export {
 } from "#runtime/memory/object-store.js";
 
 export {
+  vercelBlobMemoryStore,
+  type VercelBlobMemoryStoreOptions,
+} from "#runtime/memory/vercel-blob-object-store.js";
+
+export {
+  s3MemoryStore,
+  S3PreconditionError,
+  type S3Client,
+  type S3MemoryStoreOptions,
+} from "#runtime/memory/s3-object-store.js";
+
+export {
   MemoryConflictError,
   type MemoryStore,
   type MemoryWriteOptions,

@@ -41,7 +41,7 @@ export class ObjectConflictError extends Error {
  * {@link import("./conditional-object-store.js").ConditionalObjectMemoryStore}
  * needs to be multi-writer safe.
  *
- * Adapt a real backend (S3, Cloudflare R2, Vercel Blob) to this port; the
+ * Adapt a real backend (an S3-compatible bucket, Vercel Blob) to this port; the
  * conditional {@link ObjectStore.put} maps directly to the storage's native
  * preconditions — `If-None-Match: *` for create-if-absent, `If-Match: <etag>`
  * for update-if-unchanged — which are evaluated atomically inside the PUT. That
