@@ -21,6 +21,15 @@ export {
 
 export { fsStore } from "#runtime/memory/fs-store.js";
 
+export { conditionalObjectMemoryStore } from "#runtime/memory/conditional-object-store.js";
+
+export {
+  InMemoryObjectStore,
+  ObjectConflictError,
+  type ObjectInfo,
+  type ObjectStore,
+} from "#runtime/memory/object-store.js";
+
 export {
   MemoryConflictError,
   type MemoryStore,

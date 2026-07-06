@@ -1,5 +1,5 @@
 import { MemoryConflictError, type MemoryStore } from "#runtime/memory/store.js";
-import { buildWriteKey, sha256 } from "#runtime/memory/write-key.js";
+import { buildWriteKey } from "#runtime/memory/write-key.js";
 import {
   Errno,
   type FuseAttr,
@@ -250,8 +250,7 @@ export class MemoryFuseFilesystem implements FuseFilesystemOps {
   async #casWrite(key: string, bytes: Uint8Array): Promise<void> {
     const writeKey = buildWriteKey({ turnId: `fuse:${key}`, seq: 0, content: bytes });
     for (let attempt = 1; attempt <= MAX_CAS_ATTEMPTS; attempt += 1) {
-      const current = await this.#store.read(key);
-      const expected = current === null ? null : sha256(current);
+      const expected = await this.#store.head(key);
       try {
         await this.#store.write(key, bytes, writeKey, { expectedVersion: expected });
         return;

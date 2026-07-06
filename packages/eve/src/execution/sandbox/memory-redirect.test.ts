@@ -62,6 +62,10 @@ class RacingWriterStore implements MemoryStore {
     return this.#inner.read(path);
   }
 
+  head(path: string): Promise<string | null> {
+    return this.#inner.head(path);
+  }
+
   async write(
     path: string,
     bytes: Uint8Array,

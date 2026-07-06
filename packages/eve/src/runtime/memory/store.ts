@@ -34,11 +34,12 @@ export class MemoryConflictError extends Error {
  */
 export interface MemoryWriteOptions {
   /**
-   * Compare-and-swap precondition. When provided, the write only proceeds if
-   * the path's current head version equals `expectedVersion`; otherwise it
-   * throws {@link MemoryConflictError}. A version id is `sha256(content)` hex;
-   * the head version of an absent path is `null`. Omit for an unconditional
-   * (blind) write.
+   * Compare-and-swap precondition. When provided, the write only proceeds if the
+   * path's current head version equals `expectedVersion`; otherwise it throws
+   * {@link MemoryConflictError}. The token is backend-defined and obtained from
+   * {@link MemoryStore.head} (`sha256(content)` for the built-in stores, the
+   * object ETag for an object-store backend); the head of an absent path is
+   * `null`. Omit for an unconditional (blind) write.
    */
   readonly expectedVersion?: string | null;
 }
@@ -67,6 +68,16 @@ export interface MemoryStore {
    * Reads the latest bytes at `path`, or `null` if absent.
    */
   read(path: string): Promise<Uint8Array | null>;
+
+  /**
+   * Returns the path's current head version token, or `null` when absent.
+   *
+   * This is the token a caller passes back as `expectedVersion` to compare-and-
+   * swap without recomputing it — so conflict-aware writes stay backend-agnostic
+   * (the built-in stores return `sha256(content)`; an object store returns the
+   * ETag its conditional write conditions on).
+   */
+  head(path: string): Promise<string | null>;
 
   /**
    * Writes `bytes` to `path` under `key` (PUT semantics).
@@ -156,6 +167,11 @@ export class InMemoryMemoryStore implements MemoryStore {
   async read(path: string): Promise<Uint8Array | null> {
     const entry = this.#entries.get(path);
     return entry === undefined ? null : entry.bytes;
+  }
+
+  async head(path: string): Promise<string | null> {
+    const entry = this.#entries.get(path);
+    return entry === undefined ? null : sha256(entry.bytes);
   }
 
   async write(

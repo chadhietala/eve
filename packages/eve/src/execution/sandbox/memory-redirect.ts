@@ -20,7 +20,7 @@ import { loadContext } from "#context/container.js";
 import { SessionKey } from "#context/keys.js";
 import { type MemoryConfig, type MountedStore, MemoryConfigKey } from "#runtime/memory/keys.js";
 import { MemoryConflictError } from "#runtime/memory/store.js";
-import { buildWriteKey, sha256 } from "#runtime/memory/write-key.js";
+import { buildWriteKey } from "#runtime/memory/write-key.js";
 
 /**
  * How many times a redirected write re-reads the head and retries after a
@@ -166,8 +166,7 @@ export async function memoryWrite(path: string, content: string): Promise<void> 
   const writeKey = buildWriteKey({ turnId, seq: 0, content });
 
   for (let attempt = 1; attempt <= MAX_CAS_ATTEMPTS; attempt += 1) {
-    const current = await target.store.backend.read(target.relPath);
-    const expected = current === null ? null : sha256(current);
+    const expected = await target.store.backend.head(target.relPath);
     try {
       await target.store.backend.write(target.relPath, bytes, writeKey, {
         expectedVersion: expected,

@@ -94,6 +94,11 @@ export class FsMemoryStore implements MemoryStore {
     }
   }
 
+  async head(path: string): Promise<string | null> {
+    const current = await this.read(path);
+    return current === null ? null : sha256(current);
+  }
+
   async write(
     path: string,
     bytes: Uint8Array,
