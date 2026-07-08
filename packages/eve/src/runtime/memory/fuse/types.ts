@@ -23,6 +23,7 @@ export const Errno = {
   ENOTDIR: 20,
   EISDIR: 21,
   EINVAL: 22,
+  EROFS: 30,
   ENOTEMPTY: 39,
 } as const;
 

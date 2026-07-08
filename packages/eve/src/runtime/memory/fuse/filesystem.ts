@@ -28,6 +28,13 @@ export interface MemoryFuseFilesystemOptions {
   readonly uid?: number;
   /** Owner gid reported by `getattr`; defaults to the current process gid. */
   readonly gid?: number;
+  /**
+   * When `true`, every mutating operation rejects with `EROFS` and the store is
+   * never written. This is how a `ro` store mount is enforced at the filesystem
+   * layer, so the model sees a real read-only-filesystem error rather than a
+   * silent no-op.
+   */
+  readonly readOnly?: boolean;
 }
 
 /**
@@ -59,6 +66,7 @@ export class MemoryFuseFilesystem implements FuseFilesystemOps {
   readonly #now: () => number;
   readonly #uid: number;
   readonly #gid: number;
+  readonly #readOnly: boolean;
   readonly #open = new Map<number, OpenFile>();
   readonly #pendingDirs = new Set<string>();
   #nextFd = 3;
@@ -68,6 +76,7 @@ export class MemoryFuseFilesystem implements FuseFilesystemOps {
     this.#now = options.now ?? (() => Date.now());
     this.#uid = options.uid ?? process.getuid?.() ?? 0;
     this.#gid = options.gid ?? process.getgid?.() ?? 0;
+    this.#readOnly = options.readOnly ?? false;
   }
 
   async getattr(path: string): Promise<FuseAttr> {
@@ -108,7 +117,11 @@ export class MemoryFuseFilesystem implements FuseFilesystemOps {
     return [".", "..", ...names];
   }
 
-  async open(path: string, _flags: number): Promise<number> {
+  async open(path: string, flags: number): Promise<number> {
+    // O_WRONLY (1) / O_RDWR (2) signal write intent; reject them on a ro mount.
+    if ((flags & 0o3) !== 0) {
+      this.#assertWritable();
+    }
     const key = toKey(path);
     const bytes = await this.#store.read(key);
     if (bytes === null) {
@@ -118,6 +131,7 @@ export class MemoryFuseFilesystem implements FuseFilesystemOps {
   }
 
   async create(path: string, _mode: number): Promise<number> {
+    this.#assertWritable();
     const key = toKey(path);
     // A brand-new file is empty and dirty so an immediate `release` persists it
     // (e.g. `touch` writes zero bytes).
@@ -144,6 +158,7 @@ export class MemoryFuseFilesystem implements FuseFilesystemOps {
     length: number,
     position: number,
   ): Promise<number> {
+    this.#assertWritable();
     const file = this.#require(fd);
     const end = position + length;
     if (end > file.buf.length) {
@@ -157,12 +172,14 @@ export class MemoryFuseFilesystem implements FuseFilesystemOps {
   }
 
   async truncate(path: string, size: number): Promise<void> {
+    this.#assertWritable();
     const key = toKey(path);
     const current = (await this.#store.read(key)) ?? new Uint8Array(0);
     await this.#casWrite(key, resize(current, size));
   }
 
   async ftruncate(_path: string, fd: number, size: number): Promise<void> {
+    this.#assertWritable();
     const file = this.#require(fd);
     file.buf = resize(file.buf, size);
     file.dirty = true;
@@ -185,6 +202,7 @@ export class MemoryFuseFilesystem implements FuseFilesystemOps {
   }
 
   async unlink(path: string): Promise<void> {
+    this.#assertWritable();
     const key = toKey(path);
     await this.#store.remove(
       key,
@@ -193,6 +211,7 @@ export class MemoryFuseFilesystem implements FuseFilesystemOps {
   }
 
   async rename(src: string, dest: string): Promise<void> {
+    this.#assertWritable();
     // The store has no native rename; copy then remove. Not atomic across the two
     // ops, but agent memory does not rely on rename atomicity.
     const from = toKey(src);
@@ -209,6 +228,7 @@ export class MemoryFuseFilesystem implements FuseFilesystemOps {
   }
 
   async mkdir(path: string, _mode: number): Promise<void> {
+    this.#assertWritable();
     const key = toKey(path);
     if ((await this.#stat(key)) !== null) {
       throw new FuseError(Errno.EEXIST);
@@ -217,6 +237,7 @@ export class MemoryFuseFilesystem implements FuseFilesystemOps {
   }
 
   async rmdir(path: string): Promise<void> {
+    this.#assertWritable();
     const key = toKey(path);
     if ((await this.#store.list(`${key}/`)).length > 0) {
       throw new FuseError(Errno.ENOTEMPTY);
@@ -306,6 +327,13 @@ export class MemoryFuseFilesystem implements FuseFilesystemOps {
       throw new FuseError(Errno.EBADF);
     }
     return file;
+  }
+
+  /** Rejects with `EROFS` on a read-only mount; a no-op otherwise. */
+  #assertWritable(): void {
+    if (this.#readOnly) {
+      throw new FuseError(Errno.EROFS, "read-only memory mount");
+    }
   }
 
   #fileAttr(size: number, mtimeMs: number): FuseAttr {

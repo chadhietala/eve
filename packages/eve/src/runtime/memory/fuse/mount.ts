@@ -82,6 +82,9 @@ export async function mountMemoryFilesystem(input: MountMemoryFilesystemInput): 
   if (input.gid !== undefined) {
     options.gid = input.gid;
   }
+  if (input.readOnly !== undefined) {
+    options.readOnly = input.readOnly;
+  }
   const fs = new MemoryFuseFilesystem(input.store, options);
   return input.binding.mount(input.mountPath, fs);
 }

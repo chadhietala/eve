@@ -133,3 +133,51 @@ describe("MemoryFuseFilesystem", () => {
     expect(stat.namemax).toBe(255);
   });
 });
+
+describe("MemoryFuseFilesystem read-only mount", () => {
+  const EROFS = 30;
+
+  /** A ro filesystem over a store already seeded (through a rw view) with a file. */
+  async function seededReadOnly(): Promise<MemoryFuseFilesystem> {
+    const store = new InMemoryMemoryStore();
+    await writeFile(new MemoryFuseFilesystem(store), "/notes/facts.md", "seeded");
+    return new MemoryFuseFilesystem(store, { readOnly: true });
+  }
+
+  it("still serves reads, listings, and stats", async () => {
+    const fs = await seededReadOnly();
+    expect(await readFile(fs, "/notes/facts.md")).toBe("seeded");
+    expect(await fs.readdir("/notes")).toContain("facts.md");
+    expect((await fs.getattr("/notes/facts.md")).size).toBe(6);
+  });
+
+  it("rejects create, write-open, truncate, unlink, rename, mkdir, and rmdir with EROFS", async () => {
+    const fs = await seededReadOnly();
+    await expect(fs.create("/new.md", 0o644)).rejects.toMatchObject({ errno: EROFS });
+    await expect(fs.open("/notes/facts.md", 0o1)).rejects.toMatchObject({ errno: EROFS }); // O_WRONLY
+    await expect(fs.truncate("/notes/facts.md", 0)).rejects.toMatchObject({ errno: EROFS });
+    await expect(fs.unlink("/notes/facts.md")).rejects.toMatchObject({ errno: EROFS });
+    await expect(fs.rename("/notes/facts.md", "/notes/moved.md")).rejects.toMatchObject({
+      errno: EROFS,
+    });
+    await expect(fs.mkdir("/dir", 0o755)).rejects.toMatchObject({ errno: EROFS });
+    await expect(fs.rmdir("/notes")).rejects.toMatchObject({ errno: EROFS });
+  });
+
+  it("permits a read-intent open (O_RDONLY) but rejects any write through it", async () => {
+    const fs = await seededReadOnly();
+    const fd = await fs.open("/notes/facts.md", 0); // O_RDONLY — allowed
+    await expect(fs.write("/notes/facts.md", fd, enc.encode("x"), 1, 0)).rejects.toMatchObject({
+      errno: EROFS,
+    });
+  });
+
+  it("never mutates the underlying store", async () => {
+    const store = new InMemoryMemoryStore();
+    await writeFile(new MemoryFuseFilesystem(store), "/notes/facts.md", "seeded");
+    const fs = new MemoryFuseFilesystem(store, { readOnly: true });
+    await expect(fs.create("/new.md", 0o644)).rejects.toBeInstanceOf(FuseError);
+    expect(await store.read("new.md")).toBeNull();
+    expect((await store.listVersions("notes/facts.md")).length).toBe(1);
+  });
+});
