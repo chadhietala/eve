@@ -1,19 +1,17 @@
 /**
- * File-tool → memory redirect.
+ * Direct memory-store access for server-side consumers.
  *
- * When an agent declares a memory layer, the framework file tools
- * (`read_file`, `write_file`, `grep`, `glob`) transparently route paths under
- * the configured memory root to the matching {@link MountedStore}'s backend
- * instead of the sandbox. The model sees one filesystem; eve splits it at the
- * root boundary and again at each store's mount.
+ * The file tools reach memory as a real filesystem mounted in the sandbox, so
+ * they never route through here. But the **dream** runs with no sandbox — a
+ * bounded model loop over the store backends — and needs to read, write, list,
+ * and grep memory directly. These helpers resolve a model-facing
+ * `/mnt/memory/<store>/<file>` path to the matching {@link MountedStore} backend
+ * (longest-prefix wins) and operate on it, with the same versioned,
+ * compare-and-swap write semantics the mount enforces.
  *
- * A `/mnt/memory/...` path resolves to the store whose `mountPath` is the
- * longest matching prefix, and the remaining sub-path becomes the key into that
- * store's backend. A path under the root that matches no store is "not found". A
- * write to a `ro` store throws an error the model sees.
- *
- * All entry points are no-ops (or `false`) when no {@link MemoryConfig} is
- * present in context, so non-memory agents are completely unaffected.
+ * Every entry point is a no-op (or empty) when no {@link MemoryConfig} is in
+ * context, so a consumer without a memory layer is unaffected. A write to a `ro`
+ * store throws a clear error the caller (the dream model) can react to.
  */
 
 import { loadContext } from "#context/container.js";
@@ -23,9 +21,9 @@ import { MemoryConflictError } from "#runtime/memory/store.js";
 import { buildWriteKey } from "#runtime/memory/write-key.js";
 
 /**
- * How many times a redirected write re-reads the head and retries after a
- * compare-and-swap conflict before giving up. Bounded so a pathological
- * write-storm surfaces a clear error instead of spinning forever.
+ * How many times a write re-reads the head and retries after a compare-and-swap
+ * conflict before giving up. Bounded so a pathological write-storm surfaces a
+ * clear error instead of spinning forever.
  */
 const MAX_CAS_ATTEMPTS = 3;
 
@@ -92,23 +90,6 @@ function resolveTarget(config: MemoryConfig, path: string): ResolvedTarget | und
 }
 
 /**
- * True iff a {@link MemoryConfig} is present in context AND `normalizedPath`
- * targets the memory mount — exactly the root, or a path beneath `<root>/`.
- *
- * Returns `false` when no memory layer is configured, leaving the sandbox path
- * untouched for non-memory agents. Whether the path actually resolves to a
- * mounted store is decided per operation; an unmatched path under the root is a
- * memory "not found" rather than a sandbox path.
- */
-export function shouldRedirectToMemory(normalizedPath: string): boolean {
-  const config = getMemoryConfig();
-  if (config === undefined) {
-    return false;
-  }
-  return normalizedPath === config.root || normalizedPath.startsWith(`${config.root}/`);
-}
-
-/**
  * Reads a memory path, returning its content as a string or `null` when the
  * path does not exist or matches no mounted store.
  */
@@ -130,20 +111,20 @@ export async function memoryRead(path: string): Promise<string | null> {
 /**
  * Writes `content` to a memory path in place, routed to the matching store.
  * Throws when the path matches no mounted store, or when the matched store is
- * `ro` (read-only) — a clear error the model sees.
+ * `ro` (read-only) — a clear error the caller sees.
  *
  * The idempotency key is content-addressed via `seq: 0` (partitioned by turn id
  * when available), so a replayed identical write collapses to one.
  *
- * Writes are CONFLICT-AWARE: the redirect reads the current head, derives an
- * `expectedVersion`, and writes under that compare-and-swap precondition. If a
- * concurrent writer moved the head between the read and the write the store
- * throws {@link MemoryConflictError}; the redirect re-reads the (now newer)
- * head and retries, up to {@link MAX_CAS_ATTEMPTS} times. The model's content
- * is fixed across retries, so this is conflict-aware last-write-wins: the last
- * writer still wins the head, but because every write is versioned no write is
- * ever silently lost — the clobbered revision survives in the version history.
- * Exhausting retries surfaces a clear error rather than risking a lost write.
+ * Writes are CONFLICT-AWARE: read the current head, derive an `expectedVersion`,
+ * and write under that compare-and-swap precondition. If a concurrent writer
+ * moved the head between the read and the write the store throws
+ * {@link MemoryConflictError}; re-read the (now newer) head and retry, up to
+ * {@link MAX_CAS_ATTEMPTS} times. The content is fixed across retries, so this
+ * is conflict-aware last-write-wins: the last writer wins the head, but because
+ * every write is versioned no write is ever silently lost — the clobbered
+ * revision survives in the version history. Exhausting retries surfaces a clear
+ * error rather than risking a lost write.
  */
 export async function memoryWrite(path: string, content: string): Promise<void> {
   const config = getMemoryConfig();
@@ -204,8 +185,8 @@ export async function memoryList(prefix: string): Promise<string[]> {
 /**
  * Searches memory contents under `prefix` for `pattern`, returning matches with
  * full (mount-prefixed) paths and 1-based line numbers from the matching store.
- * Returns `[]` when the prefix matches no store. `literal` matches the `grep`
- * tool's fixed-string mode by escaping regex metacharacters.
+ * Returns `[]` when the prefix matches no store. `literal` matches a
+ * fixed-string mode by escaping regex metacharacters.
  */
 export async function memoryGrep(args: MemoryGrepArgs): Promise<MemoryGrepHit[]> {
   const config = getMemoryConfig();
@@ -251,7 +232,7 @@ export async function memoryGrep(args: MemoryGrepArgs): Promise<MemoryGrepHit[]>
 
 /**
  * Escapes regex metacharacters so a pattern matches literally — the
- * fixed-string (`literal`) semantics of the `grep` tool.
+ * fixed-string (`literal`) search semantics.
  */
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

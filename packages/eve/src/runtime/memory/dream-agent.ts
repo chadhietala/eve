@@ -1,12 +1,7 @@
 import { generateText, jsonSchema, stepCountIs, tool, type LanguageModel } from "ai";
 
 import { ContextContainer, contextStorage } from "#context/container.js";
-import {
-  memoryGrep,
-  memoryList,
-  memoryRead,
-  memoryWrite,
-} from "#execution/sandbox/memory-redirect.js";
+import { memoryGrep, memoryList, memoryRead, memoryWrite } from "#runtime/memory/store-access.js";
 import { type MemoryConfig, MemoryConfigKey } from "#runtime/memory/keys.js";
 
 /**
@@ -38,12 +33,13 @@ export interface DreamAgentInput {
  * Runs the default dream as an **agent** over the memory filesystem.
  *
  * The dream is a model loop with the agent's own file tools bound — `read_file`,
- * `write_file`, `list_files`, `grep` route over the mounted stores via the
- * file-tool redirect (so writes are versioned + CAS, and `ro` stores reject
- * writes), plus a `read_transcripts` tool that returns the windowed sessions. The
- * model reads the recent sessions, inspects the current memory, and updates
- * whichever files fit under the store of its choosing. The stores are mounted by
- * seeding {@link MemoryConfigKey} in a fresh context the tools resolve against.
+ * `write_file`, `list_files`, `grep` operate directly on the store backends (so
+ * writes are versioned + CAS, and `ro` stores reject writes), plus a
+ * `read_transcripts` tool that returns the windowed sessions. The dream runs
+ * with no sandbox, so it reaches memory through the store backends rather than a
+ * mount. The model reads the recent sessions, inspects the current memory, and
+ * updates whichever files fit under the store of its choosing. The stores are
+ * resolved by seeding {@link MemoryConfigKey} in a fresh context the tools read.
  */
 export async function runDreamAgent(input: DreamAgentInput): Promise<void> {
   const ctx = new ContextContainer();

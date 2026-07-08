@@ -208,8 +208,8 @@ describe("cross-agent memory sharing (same backend = shared)", () => {
 
   // CROSS-AGENT CAS: two distinct agents writing the shared curated file race,
   // and the loser's revision is not lost — it survives in `listVersions`. The
-  // generic redirect retry/CAS loop is already covered by the redirect tests
-  // (memory-redirect.test.ts); here we add only the cross-agent angle directly
+  // generic store-access retry/CAS loop is already covered by
+  // store-access.test.ts; here we add only the cross-agent angle directly
   // against the store contract: a concurrent write under a stale expectedVersion
   // conflicts, and after the conflict-aware re-read both revisions remain.
   it("a concurrent cross-agent write resolves via CAS without losing history", async () => {

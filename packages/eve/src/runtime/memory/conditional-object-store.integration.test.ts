@@ -4,7 +4,7 @@ import { ContextContainer, contextStorage } from "#context/container.js";
 import { conditionalObjectMemoryStore } from "#runtime/memory/conditional-object-store.js";
 import { type MemoryConfig, type MountedStore, MemoryConfigKey } from "#runtime/memory/keys.js";
 import { InMemoryObjectStore } from "#runtime/memory/object-store.js";
-import { memoryList, memoryRead, memoryWrite } from "#execution/sandbox/memory-redirect.js";
+import { memoryList, memoryRead, memoryWrite } from "#runtime/memory/store-access.js";
 
 const ROOT = "/mnt/memory";
 

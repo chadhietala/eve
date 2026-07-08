@@ -6,13 +6,7 @@ import { InMemoryMemoryStore } from "#runtime/memory/store.js";
 import type { MemoryStore, MemoryWriteOptions } from "#runtime/memory/store.js";
 import type { WriteKey } from "#runtime/memory/types.js";
 import { sha256 } from "#runtime/memory/write-key.js";
-import {
-  memoryGrep,
-  memoryList,
-  memoryRead,
-  memoryWrite,
-  shouldRedirectToMemory,
-} from "#execution/sandbox/memory-redirect.js";
+import { memoryGrep, memoryList, memoryRead, memoryWrite } from "#runtime/memory/store-access.js";
 
 const ROOT = "/mnt/memory";
 
@@ -39,11 +33,10 @@ async function withMemory<T>(config: MemoryConfig | undefined, fn: () => Promise
 
 /**
  * Wraps a real store and, on the first `n` write calls only, mutates the head
- * out from under the redirect *just before* delegating — simulating a racing
- * writer that lands between the redirect's read-of-head and its CAS write. The
- * delegated write then sees a stale `expectedVersion` and conflicts, exercising
- * the redirect's retry loop. Once the injection budget is spent, writes pass
- * straight through.
+ * out from under the writer *just before* delegating — simulating a racing
+ * writer that lands between the read-of-head and the CAS write. The delegated
+ * write then sees a stale `expectedVersion` and conflicts, exercising the retry
+ * loop. Once the injection budget is spent, writes pass straight through.
  */
 class RacingWriterStore implements MemoryStore {
   conflictsInjected = 0;
@@ -99,27 +92,6 @@ class RacingWriterStore implements MemoryStore {
     return this.#inner.readVersion(path, version);
   }
 }
-
-describe("shouldRedirectToMemory", () => {
-  it("returns false when no memory config is present", async () => {
-    await withMemory(undefined, async () => {
-      expect(shouldRedirectToMemory("/mnt/memory/notes/x.md")).toBe(false);
-    });
-  });
-
-  it("matches the root exactly and paths beneath it", async () => {
-    await withMemory(makeConfig([mountStore({ name: "notes" })]), async () => {
-      expect(shouldRedirectToMemory("/mnt/memory")).toBe(true);
-      expect(shouldRedirectToMemory("/mnt/memory/notes/x.md")).toBe(true);
-    });
-  });
-
-  it("does not match sibling paths that merely share a prefix", async () => {
-    await withMemory(makeConfig([mountStore({ name: "notes" })]), async () => {
-      expect(shouldRedirectToMemory("/mnt/memory-other/x.md")).toBe(false);
-    });
-  });
-});
 
 describe("routing to the right store", () => {
   it("routes a write/read under a store's mount to that store's backend", async () => {
@@ -232,7 +204,7 @@ describe("transparent compare-and-swap on write", () => {
 
   it("retries after a concurrent change and ultimately writes; both writes are in history", async () => {
     const inner = new InMemoryMemoryStore();
-    // Inject exactly one racing write of "concurrent" before the redirect's CAS.
+    // Inject exactly one racing write of "concurrent" before the CAS.
     const racing = new RacingWriterStore(inner, 1, () => new TextEncoder().encode("concurrent"));
     const store = mountStore({ name: "notes", backend: racing });
 
@@ -265,7 +237,7 @@ describe("transparent compare-and-swap on write", () => {
     expect(racing.conflictsInjected).toBe(3);
   });
 
-  it("a ro store still rejects before any CAS read/write", async () => {
+  it("a ro store rejects before any CAS read/write", async () => {
     const store = mountStore({ name: "facts", access: "ro" });
     await withMemory(makeConfig([store]), async () => {
       await expect(memoryWrite("/mnt/memory/facts/a.md", "x")).rejects.toThrow(/read-only/);
