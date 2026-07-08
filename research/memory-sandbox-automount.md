@@ -108,17 +108,36 @@ Two driver kinds, one seam:
   step's command sequencing (drive a fake sandbox, assert the right install +
   mount + verify commands per store, ro flag, teardown order, failure → session
   error).
-- **CI/e2e only:** the actual mount. `fuse-native` building in the Vercel image,
-  `mountpoint-s3` availability, real S3/Blob mounting, and unmount cleanup can
-  only be exercised against a live sandbox.
+- **CI/e2e only:** the actual mount against a live sandbox and real S3/Blob
+  storage, and unmount cleanup.
+
+## Verified in a live Vercel Sandbox (2026-07-08)
+
+The central risk — can the in-sandbox node mounter actually work — is **proven**.
+Driving a real Vercel Sandbox (Amazon Linux 2023, kernel 5.10) with the
+`@vercel/sandbox` SDK: `/dev/fuse` is present; `sudo dnf install -y fuse
+fuse-libs fuse-devel gcc make python3` provides `libfuse.so.2` + `fusermount` +
+the build toolchain; `npm install fuse-native` **builds cleanly** against it. The
+existing `MemoryFuseFilesystem` (bundled standalone via esbuild) mounted at
+`/mnt/memory/<store>` and, from an ordinary shell in the VM:
+
+- `ls` / `cat` return seeded content; `echo > new.md` writes and reads back
+  (write → CAS flush through the kernel); `grep -rn` matches across the mount —
+  i.e. a plain `bash` subprocess sees memory, the exact behavior the deleted
+  redirect used to special-case.
+- A `readOnly` mount rejects `echo >` with `Read-only file system` (EROFS) while
+  reads still succeed — `ro` enforcement holds through a real mount.
+
+Two implementation notes for productionization: (1) `fuse-native`'s `read`/`write`
+callbacks report the byte count as the **first** argument (`cb(n)`), unlike other
+ops' `cb(0, value)`; (2) the mounter process must stay alive to serve the mount.
 
 ## Open questions
 
-- Does `fuse-native` build and load in the Vercel Sandbox image, or is a
-  prebuilt binary / alternative binding needed?
-- One unified in-sandbox node mounter for all backends (simpler, one code path),
-  or `mountpoint-s3` for S3 and the node mounter only for Blob/custom (leans on
-  a battle-tested S3 driver)?
+- One unified in-sandbox node mounter for all backends (simpler, one code path —
+  and now proven), or `mountpoint-s3` for S3 and the node mounter only for
+  Blob/custom (leans on a battle-tested S3 driver)? The proven path favors the
+  unified mounter.
 - How is the Blob mounter packaged into the sandbox — part of the compiled
   runtime artifacts eve already ships, or installed on demand?
 - Teardown guarantees: is an unmount on session end sufficient, or is a reaper
