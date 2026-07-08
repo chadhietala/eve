@@ -117,9 +117,10 @@ The central risk — can the in-sandbox node mounter actually work — is **prov
 Driving a real Vercel Sandbox (Amazon Linux 2023, kernel 5.10) with the
 `@vercel/sandbox` SDK: `/dev/fuse` is present; `sudo dnf install -y fuse
 fuse-libs fuse-devel gcc make python3` provides `libfuse.so.2` + `fusermount` +
-the build toolchain; `npm install fuse-native` **builds cleanly** against it. The
-existing `MemoryFuseFilesystem` (bundled standalone via esbuild) mounted at
-`/mnt/memory/<store>` and, from an ordinary shell in the VM:
+the build toolchain; `npm install fuse-native` **builds cleanly** against it.
+eve's own `mountMemoryStores` API (bundled standalone via esbuild) — driven by a
+`fuse-native` `FuseBinding` — mounted two stores (one `rw`, one `ro`) at
+`/mnt/memory/<store>`, and from an ordinary shell in the VM:
 
 - `ls` / `cat` return seeded content; `echo > new.md` writes and reads back
   (write → CAS flush through the kernel); `grep -rn` matches across the mount —
