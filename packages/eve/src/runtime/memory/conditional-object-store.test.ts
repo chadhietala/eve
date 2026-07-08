@@ -120,4 +120,41 @@ describe("ConditionalObjectMemoryStore", () => {
     // A's revision survives in the shared version trail — no lost write.
     expect((await a.listVersions("shared.md")).length).toBe(2);
   });
+
+  it("N genuinely-parallel writers all land in the version trail (order-independent)", async () => {
+    const store = new ConditionalObjectMemoryStore(new InMemoryObjectStore());
+    const PATH = "hot.md";
+    const N = 12;
+
+    // Real contention: N writers race the same key at once, each running its own
+    // read-head → CAS-write → retry-on-conflict loop. The budget is unbounded on
+    // purpose — single-threaded JS plus an atomic CAS means every conflict is
+    // another writer committing, so the committed count strictly rises and the
+    // loop cannot livelock. We assert the resulting SET, never the interleaving,
+    // so the test stays deterministic no matter which writer wins the race.
+    const writeWithRetry = async (payload: string): Promise<void> => {
+      for (;;) {
+        try {
+          await store.write(PATH, bytes(payload), KEY, { expectedVersion: await store.head(PATH) });
+          return;
+        } catch (error) {
+          if (error instanceof MemoryConflictError) continue;
+          throw error;
+        }
+      }
+    };
+
+    const payloads = Array.from({ length: N }, (_, i) => `writer-${i}`);
+    await Promise.all(payloads.map(writeWithRetry));
+
+    // Every write is recorded — none silently clobbered — and the trail's
+    // contents are exactly the N distinct payloads, in whatever order they raced.
+    const versions = await store.listVersions(PATH);
+    expect(versions).toHaveLength(N);
+    const recorded = await Promise.all(versions.map((v) => store.readVersion(PATH, v.version)));
+    expect(new Set(recorded.map(text))).toEqual(new Set(payloads));
+
+    // The surviving head is one of the writers' payloads.
+    expect(payloads).toContain(text(await store.read(PATH)));
+  });
 });
