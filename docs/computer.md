@@ -117,8 +117,8 @@ const handle = createComputerHost({
 The token must be at least 16 characters and is compared in constant time.
 There is no unauthenticated mode: the host is full control of a machine.
 
-The eve desktop app mounts this host for the desktop it runs on, so an agent —
-and a person on their phone — can drive the same screen.
+The [eve desktop app](./desktop-app) mounts this host for the desktop it runs
+on, so an agent — and a person on their phone — can drive the same screen.
 
 ## Actions
 
@@ -180,6 +180,8 @@ almost always something only the operator can fix.
 
 ## What to read next
 
+- [Desktop app](./desktop-app): the client that hosts a computer and shows the
+  agent driving it.
 - [Built-in tools](./concepts/built-in-tools): the rest of the framework tool
   set.
 - [Human-in-the-loop](/docs/human-in-the-loop): how approvals pause and

@@ -12,6 +12,7 @@ allowBuilds:
   braintrust: false # Installs an optional CLI binary; the SDK does not need it.
   bufferutil: false # The package already includes the supported prebuilt bindings.
   cpu-features: false # Optional ssh2 acceleration; JavaScript fallback is sufficient.
+  electron: false # The desktop shell fetches its ~150 MB runtime on demand, not on every workspace install.
   esbuild: true # Verifies the installed platform binary.
   phase: false # Would install its own Git hooks.
   protobufjs: false # Only checks the package version.

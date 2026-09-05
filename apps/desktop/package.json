@@ -1,0 +1,40 @@
+{
+  "name": "@eve/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop client for eve agents: a sidebar of agents, threads, and a live view of the machine one is driving.",
+  "bin": {
+    "eve-desktop": "./bin/eve-desktop.js"
+  },
+  "type": "module",
+  "main": "./dist/main/index.js",
+  "scripts": {
+    "build": "pnpm run build:renderer && pnpm run build:node",
+    "build:node": "tsc -p tsconfig.node.json",
+    "build:renderer": "vite build",
+    "dev": "node ./scripts/dev.mjs",
+    "desktop": "node ./scripts/ensure-electron.mjs && pnpm run build && electron dist/main/index.js",
+    "serve": "pnpm run build && node bin/eve-desktop.js",
+    "test": "pnpm run test:unit",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "eve": "workspace:*",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "5.2.0",
+    "electron": "33.4.11",
+    "typescript": "catalog:",
+    "vite": "7.3.6",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
