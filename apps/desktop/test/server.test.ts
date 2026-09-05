@@ -200,3 +200,41 @@ async function startEcho(seen: { authorization?: string; url?: string }) {
     origin: `http://127.0.0.1:${address.port}`,
   };
 }
+
+describe("desktop control server hardening", () => {
+  it("does not let an agent set a cookie on the desktop origin", async () => {
+    const { createServer } = await import("node:http");
+    const upstream = createServer((_request, response) => {
+      response.writeHead(200, {
+        "content-type": "application/json",
+        "set-cookie": "eve_desktop=stolen; Path=/",
+      });
+      response.end("{}");
+    });
+    await new Promise<void>((done) => upstream.listen(0, "127.0.0.1", done));
+    const address = upstream.address();
+    if (address === null || typeof address === "string") throw new Error("no port");
+
+    try {
+      const created = await authorized("/api/bots", {
+        body: JSON.stringify({ name: "Cookie", url: `http://127.0.0.1:${address.port}` }),
+        method: "POST",
+      });
+      const { bot } = (await created.json()) as { bot: { id: string } };
+
+      const response = await authorized(`/api/bots/${bot.id}/eve/v1/health`);
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("set-cookie")).toBeNull();
+    } finally {
+      await new Promise<void>((done) => upstream.close(() => done()));
+    }
+  });
+
+  it("refuses to serve a file outside the renderer directory", async () => {
+    const response = await authorized("/../../../../etc/passwd");
+
+    expect([200, 403, 404]).toContain(response.status);
+    expect(await response.text()).not.toContain("root:");
+  });
+});

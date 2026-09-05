@@ -399,13 +399,22 @@ $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
             context,
           );
           return { text: `Moved to (${action.coordinate.join(", ")}).` };
-        case "left_mouse_down":
-          return click(action, context, action.coordinate, 0x0002, 0x0002, 0).then(() => ({
-            text: "Left button down.",
-          }));
-        case "left_mouse_up":
-          await powershell(`[EveInput]::mouse_event(0x0004,0,0,0,0)`, context);
+        case "left_mouse_down": {
+          const move =
+            action.coordinate === undefined
+              ? ""
+              : `[void][EveInput]::SetCursorPos(${action.coordinate[0]}, ${action.coordinate[1]});`;
+          await powershell(`${move} [EveInput]::mouse_event(0x0002,0,0,0,0)`, context);
+          return { text: "Left button down." };
+        }
+        case "left_mouse_up": {
+          const move =
+            action.coordinate === undefined
+              ? ""
+              : `[void][EveInput]::SetCursorPos(${action.coordinate[0]}, ${action.coordinate[1]});`;
+          await powershell(`${move} [EveInput]::mouse_event(0x0004,0,0,0,0)`, context);
           return { text: "Left button up." };
+        }
         case "left_click":
           return click(action, context, action.coordinate, 0x0002, 0x0004, 1);
         case "double_click":

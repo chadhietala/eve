@@ -38,6 +38,7 @@ const DEFAULT_MAX_RECALL_CHARACTERS = 4_000;
 const DEFAULT_TOP_K = 8;
 const RECALL_ITEM_ID = "learning-memory-recall";
 const PIN_HALF_LIFE_MS = 90 * 24 * 60 * 60 * 1_000;
+const MAX_TRACKED_SCOPES = 256;
 
 export interface LearningMemoryOptions {
   /**
@@ -110,7 +111,8 @@ export function learningMemory(options: LearningMemoryOptions = {}): MemoryProvi
   );
 
   // Reinforcement is best-effort: what recall surfaced this turn is credited
-  // when the turn settles, in the same write capture already performs.
+  // when the turn settles, in the same write capture already performs. A turn
+  // that never settles leaves its entry behind, so the map is bounded.
   const recalledByScope = new Map<string, readonly string[]>();
 
   const recall = async (context: MemoryOperationContext): Promise<MemoryRecallResult> => {
@@ -134,6 +136,10 @@ export function learningMemory(options: LearningMemoryOptions = {}): MemoryProvi
       if (!ordered.some((record) => record.id === entry.record.id)) ordered.push(entry.record);
     }
     const selected = withinBudget(ordered, context.memory.slot, maxRecallCharacters);
+    if (recalledByScope.size >= MAX_TRACKED_SCOPES) {
+      const oldest = recalledByScope.keys().next();
+      if (!oldest.done) recalledByScope.delete(oldest.value);
+    }
     recalledByScope.set(
       partition,
       selected.map((record) => record.id),

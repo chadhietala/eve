@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
-import { extname, join, normalize, resolve } from "node:path";
+import { extname, join, normalize, resolve, sep } from "node:path";
 
 import {
   COMPUTER_ACTION_SCHEMA,
@@ -259,7 +259,7 @@ export async function startDesktopServer(
   async function serveRenderer(response: ServerResponse, path: string): Promise<void> {
     const requested = path === "/" ? "/index.html" : path;
     const target = join(rendererRoot, normalize(requested).replace(/^(\.\.[/\\])+/, ""));
-    if (!target.startsWith(rendererRoot)) {
+    if (target !== rendererRoot && !target.startsWith(`${rendererRoot}${sep}`)) {
       json(response, 403, { error: "Forbidden." });
       return;
     }
@@ -403,7 +403,11 @@ async function toWebRequest(request: IncomingMessage, url: URL): Promise<Request
 async function writeWebResponse(response: ServerResponse, source: Response): Promise<void> {
   const headers: Record<string, string> = {};
   source.headers.forEach((value, name) => {
-    if (name !== "content-encoding" && name !== "content-length") headers[name] = value;
+    // An agent must not be able to plant a cookie on the desktop's origin,
+    // which is where the pairing cookie lives. Encoding and length are
+    // recomputed by Node as the body is written.
+    if (name === "content-encoding" || name === "content-length" || name === "set-cookie") return;
+    headers[name] = value;
   });
   response.writeHead(source.status, headers);
 
