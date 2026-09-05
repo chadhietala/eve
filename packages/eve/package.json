@@ -111,6 +111,16 @@
       "import": "./dist/src/public/memory/scope.js",
       "default": "./dist/src/public/memory/scope.js"
     },
+    "./self-improvement": {
+      "types": "./dist/src/public/self-improvement/index.d.ts",
+      "import": "./dist/src/public/self-improvement/index.js",
+      "default": "./dist/src/public/self-improvement/index.js"
+    },
+    "./memory/learning": {
+      "types": "./dist/src/public/memory/learning/index.d.ts",
+      "import": "./dist/src/public/memory/learning/index.js",
+      "default": "./dist/src/public/memory/learning/index.js"
+    },
     "./memory/file": {
       "types": "./dist/src/public/memory/file/index.d.ts",
       "import": "./dist/src/public/memory/file/index.js",

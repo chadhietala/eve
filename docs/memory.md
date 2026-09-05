@@ -26,11 +26,12 @@ sharing a storage model.
 Every memory slot needs a provider. Choose one based on how the agent should
 recall and maintain memory:
 
-| Provider        | Status         | Use it for                                                                |
-| --------------- | -------------- | ------------------------------------------------------------------------- |
-| `fileMemory()`  | Built into eve | A bounded, model-maintained list of durable facts and preferences         |
-| Supermemory     | Third-party    | Semantic recall, automatic capture, source extraction, and memory tools   |
-| Custom provider | Supported      | Application-specific retrieval, capture, retention, or model-facing tools |
+| Provider           | Status         | Use it for                                                                                         |
+| ------------------ | -------------- | -------------------------------------------------------------------------------------------------- |
+| `fileMemory()`     | Built into eve | A bounded, model-maintained list of durable facts and preferences                                  |
+| `learningMemory()` | Built into eve | Continuous learning from every turn, with ranked recall — see [Learning memory](./learning-memory) |
+| Supermemory        | Third-party    | Semantic recall, automatic capture, source extraction, and memory tools                            |
+| Custom provider    | Supported      | Application-specific retrieval, capture, retention, or model-facing tools                          |
 
 [Supermemory](https://github.com/supermemoryai/eve-supermemory#readme) is a
 third-party provider that recalls relevant context before each turn, captures
