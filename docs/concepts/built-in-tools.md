@@ -46,6 +46,7 @@ Some framework-provided tools stay out of the default set. Add the corresponding
 | `grep`     | `grep` from `eve/tools/grep`                        | Search sandbox file contents by regex.             |
 | `Workflow` | `experimental_workflow()` from `eve/tools/workflow` | Orchestrate root-agent copies from generated code. |
 | `sleep`    | `sleep()` from `eve/tools/sleep`                    | Pause and durably resume the current turn.         |
+| `computer` | `computer` from `eve/tools/computer`                | See a screen and drive a mouse and keyboard.       |
 
 For example, add file discovery and content search with two files:
 
@@ -59,7 +60,7 @@ export { grep as default } from "eve/tools/grep";
 
 The filename supplies the model-facing tool name. The tools run against the agent's sandbox and use the same schemas, results, and error behavior as eve's framework implementations. Wrap either definition with `defineTool({ ...glob, description: "..." })` or `defineTool({ ...grep, description: "..." })` when you need to change its description or approval policy.
 
-The sections below cover `Workflow` and `sleep` in more detail.
+The sections below cover `Workflow` and `sleep` in more detail. `computer` has its own page: [Computer use](../computer).
 
 ## Override a default
 

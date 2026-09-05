@@ -131,6 +131,16 @@
       "import": "./dist/src/public/tools/index.js",
       "default": "./dist/src/public/tools/index.js"
     },
+    "./computer": {
+      "types": "./dist/src/public/computer/index.d.ts",
+      "import": "./dist/src/public/computer/index.js",
+      "default": "./dist/src/public/computer/index.js"
+    },
+    "./tools/computer": {
+      "types": "./dist/src/public/tools/computer.d.ts",
+      "import": "./dist/src/public/tools/computer.js",
+      "default": "./dist/src/public/tools/computer.js"
+    },
     "./tools/bash": {
       "types": "./dist/src/public/tools/bash.d.ts",
       "import": "./dist/src/public/tools/bash.js",
